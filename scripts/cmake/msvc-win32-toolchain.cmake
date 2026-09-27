@@ -1,0 +1,11 @@
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86)
+
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    set(TOOLCHAIN_EXT ".exe")
+else()
+    set(TOOLCHAIN_EXT "")
+endif()
+
+set(CMAKE_C_COMPILER "cl${TOOLCHAIN_EXT}")
+set(CMAKE_CXX_COMPILER "cl${TOOLCHAIN_EXT}")

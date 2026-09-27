@@ -1,0 +1,33 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "all_base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build",
+            "installDir": "${sourceDir}/install",
+            "cacheVariables": {
+                "CMAKE_VERBOSE_MAKEFILE": "OFF",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "gcc_arm_base",
+            "hidden": true,
+            "inherits": "all_base",
+            "generator": "Ninja",
+            "environment": {
+                "SDK_TOOLCHAIN_PATH": "${sourceDir}/toolchain/arm-none-eabi-gcc/bin"
+            }
+        },
+        {
+            "name": "BareZynq7000-Debug",
+            "inherits": "gcc_arm_base",
+            "binaryDir": "${sourceDir}/build",
+            "toolchainFile": "./scripts/cmake/gcc-arm-ca9.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        }
+    ]
+}
