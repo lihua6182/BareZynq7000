@@ -7,6 +7,7 @@ target_sources("soc"
     "zynq_boot_header.c"
     "zynq_clock.c"
     "zynq_delay.c"
+    "zynq_devcfg.c"
     "zynq_fiq.c"
     "zynq_startup.s"
     "zynq_system.c"
@@ -15,4 +16,5 @@ target_sources("soc"
 target_include_directories("soc"
     INTERFACE
     "."
+    "cmsis"
 )

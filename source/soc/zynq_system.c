@@ -22,7 +22,8 @@ static uint32_t mmu_table[NUM_TT_ENTRIES] __attribute__((aligned(16384), section
 
 /* Must run from OCM during the QSPI/clock reconfiguration window. */
 static void qspi_clock_init(void) __attribute__((section(".fast"), noinline));
-static void clock_init(void) __attribute__((section(".fast"), noinline));
+static void sys_clock_init(void) __attribute__((section(".fast"), noinline));
+static void xip_warm_cache(void) __attribute__((section(".fast"), noinline));
 /*
  * Fill the table with 1 MB sections. Map (VA -> attr):
  *   0x00000000-0x0002FFFF  low OCM (OCM0-2)            WB-alloc RW
@@ -36,7 +37,7 @@ static void clock_init(void) __attribute__((section(".fast"), noinline));
  *   0xFD000000-0xFFEFFFFF  unmapped
  *   0xFFFF0000-0xFFFFFFFF  high OCM (OCM3)             non-cache RW (MMU tbl)
  * 0xFB0/0xFB1 alias PA 0x0; other bus masters skip the MMU and see DDR, so
- * DMA must use high OCM. The PL310 (L2) stays off; the CA9 runs on L1 only.
+ * DMA must use high OCM. The PL310 (L2) is enabled by mmu_enable().
  */
 static void mmu_init(uint32_t* ptt) {
     uint32_t i;
@@ -68,14 +69,41 @@ static void mmu_init(uint32_t* ptt) {
 }
 
 /*
+ * Pull the XIP image into the unified L2 (and L1D) by reading it as data,
+ * while the QSPI is still in its BootROM configuration. Later instruction
+ * fetches then hit L2 instead of the QSPI linear port: the first fetch
+ * after the clock reconfiguration is always a cache miss (the startup code
+ * was last executed with the MMU off and never cached), and reads through
+ * the freshly reconfigured controller are not reliable on this board.
+ *
+ * The span is the whole flash-resident image: _sidata is the .data load
+ * address (the .fast load image precedes it) and the .data size is
+ * _edata - _sdata, so _sidata + (_edata - _sdata) is the end of everything
+ * the CPU can fetch from the QSPI. If another AT > FLASH section is ever
+ * added after .data, extend this bound accordingly.
+ */
+static void xip_warm_cache(void) {
+    extern uint8_t _sidata[], _sdata[], _edata[];
+    volatile const uint32_t* p = (volatile const uint32_t*)LQSPI_BASE;
+    uint32_t words = ((uint32_t)(uintptr_t)(_sidata + (_edata - _sdata)) - LQSPI_BASE + 3U) / 4U;
+    uint32_t i;
+
+    for (i = 0U; i < words; i++) {
+        (void)p[i];
+    }
+}
+
+/*
  * Reconfigure QSPI clock + read-capture for XIP. Runs from OCM (.fast).
  * UG585 ch.12: reconfigure with LQ_MODE=0 (linear mode off) and both FIFOs
  * empty, or the autonomous prefetch corrupts in-flight flash data. Sequence:
  *   1. LQ_MODE=0  2. drain RxFIFO  3. switch ref clk + pulse both resets
  *   4. reprogram registers, re-enter linear mode.
  * Result: QSPI ref = IO PLL/5 = 200 MHz, SCLK = 100 MHz, internal loopback
- * capture. Config_reg = BootROM handoff 0x800238C1 (BAUD_RATE_DIV=0). If
- * capture is marginal, the 0x2D delay phase (DLY1=1, DLY0=5) is the fallback.
+ * capture. Reads through the freshly reconfigured controller are not
+ * reliable on this board, so xip_warm_cache() runs first: boot never
+ * depends on them, and the warmed L2 serves all early fetches. Config_reg
+ * = BootROM handoff 0x800238C1 (BAUD_RATE_DIV=0).
  */
 static void qspi_clock_init(void) {
     uint32_t lqspi_cr;
@@ -112,9 +140,9 @@ static void qspi_clock_init(void) {
 
     /* 4. Reprogram controller, re-enter linear mode (Config_reg=0x800238C1, LQSPI_CR=0x8000016B). */
     QSPI->CR = 0x800238C1U;
-    QSPI->LPBK_DLY_ADJ = (1U << 5); /* USE_LPBK = 1, DLY1 = 00, DLY0 = 00 */
-    QSPI->LQSPI_CR = lqspi_cr;      /* 0x8000016B, LQ_MODE = 1            */
-    QSPI->ER = 1U;                  /* SPI_EN = 1                         */
+    QSPI->LPBK_DLY_ADJ = 0x2DU; /* USE_LPBK = 1; keep reserved [4:0] at the 0xD reset value */
+    QSPI->LQSPI_CR = lqspi_cr;  /* 0x8000016B, LQ_MODE = 1            */
+    QSPI->ER = 1U;              /* SPI_EN = 1                         */
 }
 
 /*
@@ -125,7 +153,7 @@ static void qspi_clock_init(void) {
  * system runs on PS_CLK), pulse PLL_RESET, wait lock, leave bypass. DDR PLL
  * untouched (no DDR controller). MMU/L1 on, so lock waits stay in I-cache.
  */
-static void clock_init(void) {
+static void sys_clock_init(void) {
     uint32_t ctrl;
     uint32_t t;
 
@@ -189,36 +217,82 @@ static void clock_init(void) {
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
+/* TAG/DATA RAM latency registers (0x108/0x10C) are not members of the
+   CMSIS L2C_310_TypeDef, so they are written by offset. */
+#define L2C_TAG_RAM_CNTRL  ((*((__IO uint32_t*)(uintptr_t)L2C_310_BASE + (0x108U / 4U))))
+#define L2C_DATA_RAM_CNTRL ((*((__IO uint32_t*)(uintptr_t)L2C_310_BASE + (0x10CU / 4U))))
+
 /*
- * Activate the translation table and enable MMU, L1 caches and branch
- * prediction. Caches and the branch predictor were invalidated by
+ * Bring up the PL310 (L2) cache, following the official boot.S sequence:
+ * configure while the controller is still disabled, invalidate by way, set
+ * the SLCR L2C_RAM register (UG585: "for high system reliability when using
+ * the L2-cache, set the slcr.L2C_RAM register to the value of 0x0002_0202",
+ * AR#54190), then enable. The speculative data/instruction prefetch
+ * (AUX_CNT[29:28]) must stay off: with it on, the prefetcher runs ahead
+ * into the QSPI linear window during the clock reconfiguration and causes a
+ * prefetch-abort storm (hardware verified). Demand linefills are what makes
+ * the marginal 100 MHz QSPI XIP read path reliable.
+ */
+static void l2_enable(void) {
+    L2C_310->AUX_CNT &= ~((1UL << 29) | (1UL << 28)); /* prefetch off (board) */
+    L2C_TAG_RAM_CNTRL = 0x111UL;                      /* official boot.S value */
+    L2C_DATA_RAM_CNTRL = 0x121UL;                     /* official boot.S value */
+
+    L2C_InvAllByWay(); /* invalidate all ways (8-way here: AUX_CNT[16] = 0) */
+    __DSB();
+
+    SLCR->UNLOCK = SLCR_UNLOCK_KEY;
+    SLCR->L2C_RAM = 0x00020202UL;
+    SLCR->LOCK = SLCR_LOCK_KEY;
+
+    L2C_310->CONTROL = 1UL;
+    __DSB();
+}
+
+/*
+ * Activate the translation table, the PL310 L2 cache, MMU, L1 caches and
+ * branch prediction. Caches and the branch predictor were invalidated by
  * Reset_Handler while disabled.
- *
- * Note: the PL310 (L2) cache stays off. Enabling it caused a prefetch-abort
- * storm against the QSPI linear controller (cause verified live over
- * J-Link); retry only with the L2C speculative prefetch disabled.
  */
 static void mmu_enable(uint32_t* ptt) {
     uint32_t v;
 
-    // TTBR0 = translation table
-    // DACR: all domains = client
-    __asm volatile("dsb" ::: "memory");
-    __asm volatile("mcr p15, 0, %0, c2, c0, 0" ::"r"((uint32_t)(uintptr_t)ptt) : "memory");
-    __asm volatile("mcr p15, 0, %0, c3, c0, 0" ::"r"(0x55555555u) : "memory");
+    // TTBR0 = translation table, DACR: all domains = client.
+    // ACTLR: SMP bit (ARM requires it before enabling the MMU and caches,
+    // or before performing cache maintenance) + cache/TLB maintenance
+    // broadcast, as the official boot.S does. All CP15 access via CMSIS.
+    __DSB();
+    __set_TTBR0((uint32_t)(uintptr_t)ptt);
+    __set_DACR(0x55555555u);
 
-    __asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(v));
-    v |= (1u << 0)      // M: enable MMU
-         | (1u << 2)    // C: enable D cache
-         | (1u << 11)   // Z: enable branch prediction
-         | (1u << 12);  // I: enable I cache
-    __asm volatile("mcr p15, 0, %0, c1, c0, 0" ::"r"(v) : "memory");
-    __asm volatile("isb" ::: "memory");
+    __set_ACTLR(__get_ACTLR() | ACTLR_SMP_Msk | (1UL << 0));
+
+    // SCU: flush the duplicate tag store, then enable the SCU (official
+    // boot.S; the SCU enable bit is 0 out of reset).
+    MPCORE->SCU_INVALIDATE = 0xFFFFU;
+    MPCORE->SCU_CONTROL |= 1UL;
+
+    // L2 on before MMU/L1, so the QSPI reconfiguration window later runs
+    // fully covered by L1+L2.
+    l2_enable();
+
+    // ACTLR[2]: enable the L1 instruction prefetch
+    __set_ACTLR(__get_ACTLR() | (1UL << 2));
+
+    v = __get_SCTLR();
+    v |= SCTLR_M_Msk     // M: enable MMU
+         | SCTLR_C_Msk   // C: enable D cache
+         | SCTLR_Z_Msk   // Z: enable branch prediction
+         | SCTLR_I_Msk;  // I: enable I cache
+    __set_SCTLR(v);
+    __ISB();
 }
 
 void zynq_system_init(void) {
     mmu_init(mmu_table);
     mmu_enable(mmu_table);
-    clock_init();
+    xip_warm_cache();
+
+    sys_clock_init();
     qspi_clock_init();
 }

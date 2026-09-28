@@ -49,7 +49,7 @@
 [FLASH]
   BankName = "External QSPI flash"
   BaseAddr = 0xFC000000
-  Disabled = 1
+  Disabled = 0
   NumBanks = 1
 [PRODUCTION]
   AutoPerformsDisconnect = 0

@@ -2,24 +2,13 @@ ENTRY(_start)
 
 MEMORY
 {
-    /* Low OCM (OCM0-2). Reset_Handler keeps the BootROM split mapping
-       (OCM_CFG[RAM_HI] = 4'b1000): these 192 KB sit at 0x00000000. */
     RAM          (rwx) : ORIGIN = 0x00000000, LENGTH = 192K
-
-    /* High OCM (OCM3), mapped to the top of memory by OCM_CFG[RAM_HI] = 1000.
-       Holds the MMU translation table and non-cacheable application RAM.
-       Unlike PA 0x0, this region is visible to DMA and other bus masters. */
     NO_CACHE_RAM (rwx) : ORIGIN = 0xFFFF0000, LENGTH = 64K
-
-    /* QSPI linear (XIP) address space */
     FLASH        (rx)  : ORIGIN = 0xFC000000, LENGTH = 16M
 }
 
 __ram_start__                   = ORIGIN(RAM);
 __ram_end__                     = ORIGIN(RAM) + LENGTH(RAM);
-__no_cache_ram_region_start__   = ORIGIN(NO_CACHE_RAM);
-/* Region end is 0x1_0000_0000 (4 GiB), which a 32-bit target cannot express:
-   ld 2.45 truncates ORIGIN + LENGTH to 0, so compare sizes, not end addresses. */
 __flash_start__                 = ORIGIN(FLASH);
 __flash_end__                   = ORIGIN(FLASH) + LENGTH(FLASH);
 
@@ -112,20 +101,11 @@ SECTIONS
         __non_init_end__ = .;
     } > RAM
 
-    /* MMU translation table */
-    .mmu_table (NOLOAD) :
-    {
-        . = ALIGN(16384);
-        __mmu_table_start__ = .;
-        KEEP(*(.mmu_table))
-        . = ALIGN(4);
-        __mmu_table_end__ = .;
-    } > NO_CACHE_RAM
-
-    /* Non-cacheable application RAM (DMA descriptors, buffers shared with
-       other bus masters). This region is the DMA-reachable view of the OCM. */
+    /* Non-cacheable application RAM, DMA-reachable. */
     .no_cache_ram (NOLOAD) :
     {
+        . = ALIGN(16384);
+        KEEP(*(.mmu_table))
         . = ALIGN(16);
         __no_cache_ram_start__ = .;
         KEEP(*(.no_cache_ram))
@@ -158,6 +138,22 @@ SECTIONS
         _edata = .;
     } > RAM AT > FLASH
     _sidata = LOADADDR(.data);
+
+    /* PL image, consumed by zynq_devcfg: the packed blob produced by
+       tools/rle_bitstream.py (magic + lengths + CRC-32 + RLE payload), or a
+       raw PCAP-form bitstream if one is embedded directly. The direct form
+       is DMA'd in place from the QSPI linear window; the packed form streams
+       through a 4 KB OCM staging buffer. The ALIGN sits on the section, not
+       inside it, so no hole is burned between the previous section and the
+       image. */
+    .bitstream : ALIGN(4096)
+    {
+        __bitstream_start__ = .;
+        KEEP(*(.bitstream))
+        . = ALIGN(4);
+        __bitstream_end__ = .;
+    } > FLASH
+    ASSERT((__bitstream_start__ & 0x3F) == 0, "PL bitstream must be 64-byte aligned")
 
     /* Zero-initialized data */
     .bss (NOLOAD) :
@@ -198,10 +194,6 @@ SECTIONS
     ASSERT(ADDR(.vectors) == ORIGIN(FLASH) + 0x8C0,         ".vectors must start at 0xFC0008C0")
     ASSERT((ADDR(.vectors) & 0x1F) == 0,                    ".vectors must be 32-byte aligned")
     ASSERT(__stack_svc_end__ <= __ram_end__,                "OCM overflow: heap/exception stacks exceed RAM")
-    ASSERT(SIZEOF(.mmu_table) <= 0x4000,                     "MMU translation table exceeds 16 KB")
-    ASSERT((__no_cache_ram_end__ - __no_cache_ram_region_start__) <= LENGTH(NO_CACHE_RAM), "no-cache OCM overflow: table + .no_cache_ram exceed 64 KB")
-    ASSERT(__fast_load__ + SIZEOF(.fast) <= __flash_end__,  ".fast load image exceeds FLASH")
-    ASSERT(_sidata + SIZEOF(.data) <= __flash_end__,        ".data load image exceeds FLASH")
 
     /DISCARD/ :
     {

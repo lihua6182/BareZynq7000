@@ -108,3 +108,85 @@ void zynq_clock_freqs_get(zynq_clock_freqs_type* freqs) {
 
     *freqs = f;
 }
+
+/*
+ * PL output clocks (FCLK0-3): SLCR FPGA0-3_CLK_CTRL at 0x170 + 0x10 * n.
+ * The register group per route is {CLK_CTRL, THR_CTRL, THR_CNT, THR_STA},
+ * so the four CLK_CTRLs are not contiguous in the struct.
+ */
+static volatile uint32_t* zynq_clock_fclk_ctrl_reg(uint32_t fclk) {
+    switch (fclk) {
+        case 0U:
+            return &SLCR->FPGA0_CLK_CTRL;
+        case 1U:
+            return &SLCR->FPGA1_CLK_CTRL;
+        case 2U:
+            return &SLCR->FPGA2_CLK_CTRL;
+        default:
+            return &SLCR->FPGA3_CLK_CTRL;
+    }
+}
+
+bool zynq_clock_fclk_config(zynq_fclk_type fclk, zynq_fclk_src_type src,
+                            uint32_t div0, uint32_t div1, bool enable) {
+    volatile uint32_t* clk_ctrl;
+    uint32_t v;
+
+    if (((uint32_t)fclk > 3U) ||
+        ((src != ZYNQ_FCLK_SRC_IO_PLL) && (src != ZYNQ_FCLK_SRC_ARM_PLL) && (src != ZYNQ_FCLK_SRC_DDR_PLL)) ||
+        (div0 == 0U) || (div0 > 63U) || (div1 == 0U) || (div1 > 63U)) {
+        return false;
+    }
+
+    clk_ctrl = zynq_clock_fclk_ctrl_reg((uint32_t)fclk);
+
+    /* Gate the route off around the update: the source multiplexer is not
+       glitch-free (UG585 ch. 25); the dividers are. One unlock/lock window
+       for the whole reconfiguration. */
+    SLCR->UNLOCK = SLCR_UNLOCK_KEY;
+    v = *clk_ctrl & ~((0x3FUL << 8) | (0x3FUL << 20) | (0x3UL << 4) | 0x1UL);
+    v |= ((div0 & 0x3FUL) << 8) |
+         ((div1 & 0x3FUL) << 20) |
+         ((uint32_t)src << 4) |
+         ((enable != false) ? 0x1UL : 0x0UL);
+    *clk_ctrl = v;
+    SLCR->LOCK = SLCR_LOCK_KEY;
+
+    return true;
+}
+
+void zynq_clock_fclk_enable(zynq_fclk_type fclk, bool enable) {
+    volatile uint32_t* clk_ctrl;
+    uint32_t v;
+
+    if ((uint32_t)fclk > 3U) {
+        return;
+    }
+    clk_ctrl = zynq_clock_fclk_ctrl_reg((uint32_t)fclk);
+
+    SLCR->UNLOCK = SLCR_UNLOCK_KEY;
+    v = *clk_ctrl & ~0x1UL;
+    if (enable != false) {
+        v |= 0x1UL;
+    }
+    *clk_ctrl = v;
+    SLCR->LOCK = SLCR_LOCK_KEY;
+}
+
+uint32_t zynq_clock_fclk_freq_get(zynq_fclk_type fclk) {
+    volatile uint32_t* clk_ctrl;
+    zynq_clock_freqs_type freqs;
+
+    if ((uint32_t)fclk > 3U) {
+        return 0U;
+    }
+    clk_ctrl = zynq_clock_fclk_ctrl_reg((uint32_t)fclk);
+    if ((*clk_ctrl & 0x1UL) == 0U) {
+        return 0U; /* route gated off: the PL sees no clock */
+    }
+
+    freqs.arm_pll = zynq_clock_pll_freq(SLCR->ARM_PLL_CTRL);
+    freqs.ddr_pll = zynq_clock_pll_freq(SLCR->DDR_PLL_CTRL);
+    freqs.io_pll = zynq_clock_pll_freq(SLCR->IO_PLL_CTRL);
+    return zynq_clock_periph2_freq(*clk_ctrl, &freqs);
+}

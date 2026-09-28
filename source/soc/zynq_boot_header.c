@@ -53,7 +53,7 @@ const boot_header_t zynq_boot_header = {
     .qspi_configuration_word = 0x00000001,        /* Hard coded to 0x00000001 */
     .boot_header_checksum = 0x00194AC1,           /* ~sum(words 0x20..0x44), one's complement (UG585: "inverting the result"; a plain */
                                                   /* negation is off by one and the BootROM rejects the header). Checked at build */
-                                                  /* time by scripts/validate_boot_header.py. */
+                                                  /* time by function_validate_boot_header (cmake). */
     .reg_init_table[0].reg_addr = 0xFFFFFFFF,     /* 0xFFFFFFFF terminates the list: unused pairs must be addr=0xFFFFFFFF, value=0x0 */
     .reg_init_table[0].reg_value = 0x00000000,
 };

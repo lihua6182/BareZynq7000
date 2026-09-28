@@ -1,15 +1,16 @@
 #include "zynq_fiq.h"
 
-/* IAR/EOIR interrupt ID field; the bounds check below also dismisses the
-   spurious ID 1023 without EOIR, as IHI0048 requires */
-#define GIC_INT_ID_MSK  (0x3FFUL)
-
 /* Default priority handed out by zynq_fiq_enable: mid-range, below the
    reset value 0 so a future IRQ group can always preempt if needed */
 #define ZYNQ_FIQ_DEFAULT_PRIORITY (0xA0U)
 
 /* Handler slot type: void f(void), STM32 IRQ-handler style. */
 typedef void (*zynq_fiq_isr_t)(void);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
+void fiq_handler(void) __attribute__((interrupt("FIQ"), target("general-regs-only")));
+#pragma GCC diagnostic pop
 
 /*
  * One weak handler per GIC interrupt ID, 0..95 (16 SGI + 16 PPI + 64 SPI,
@@ -223,39 +224,38 @@ static const zynq_fiq_isr_t zynq_fiq_dispatch[ZYNQ_GIC_NUM_IDS] = {
  * r0-r7 (it adds the exception prologue and the subs pc, lr, #4 return).
  * The IAR/EOIR pair is mandatory: without the acknowledge the FIQ line
  * stays asserted and the exception re-fires right after the SPSR restore.
- * Spurious ID 1023 takes no EOIR (IHI0048). target("general-regs-only")
- * keeps the handler off the VFP/NEON bank; GCC's warning below only looks
- * at command-line options, hence the pragma.
+ * Spurious ID 1023 fails the bounds check and takes no EOIR (IHI0048).
+ * target("general-regs-only") keeps the handler off the VFP/NEON bank;
+ * GCC's warning below only looks at command-line options, hence the pragma.
  */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wattributes"
-__attribute__((interrupt("FIQ"), target("general-regs-only"))) void fiq_handler(void) {
-    uint32_t id = GICC->IAR & GIC_INT_ID_MSK;
+void fiq_handler(void) {
+    uint32_t id = (uint32_t)GIC_AcknowledgePending();
 
     if (id < ZYNQ_GIC_NUM_IDS) {
         zynq_fiq_dispatch[id]();
-        __asm volatile("dsb" ::: "memory"); /* source flag clear completes before EOI */
-        GICC->EOIR = id;                    /* priority drop + deactivate */
+        __DSB();                         /* source flag clear completes before EOI */
+        GIC_EndInterrupt((IRQn_Type)id); /* priority drop + deactivate */
     }
 }
-#pragma GCC diagnostic pop
 
 /*
- * Bring up the GIC for FIQ delivery: enable the distributor and the CPU
- * interface with FIQEn (Group 0 -> FIQ), then unmask FIQ in the CPSR. Run
- * once at boot, before arming any source. IRQ (Group 1) delivery is left
- * untouched.
+ * Bring up the GIC for FIQ delivery: distributor and CPU interface via the
+ * CMSIS GIC_* API (vendored core_ca.h), then FIQEn by hand - the CMSIS GIC
+ * API has no FIQ support (no GICC_CTLR.FIQEn bit), so that last bit stays
+ * board code. Run once at boot, before arming any source. IRQ (Group 1)
+ * delivery is left untouched.
  */
 void zynq_fiq_init(void) {
-    GICD->CTLR = 0; /* distributor off while configuring */
-    GICC->CTLR = 0; /* CPU interface off */
+    GIC_DisableDistributor(); /* distributor off while configuring */
+    GIC_DisableInterface();
 
-    GICC->PMR = 0xFFUL; /* unmask all priorities */
+    GIC_SetInterfacePriorityMask(0xFFU); /* unmask all priorities */
 
-    GICD->CTLR = 1UL;                     /* enable the distributor */
-    GICC->CTLR = (1UL << 0) | (1UL << 3); /* enable + FIQEn          */
+    GIC_EnableDistributor();
+    GIC_EnableInterface();
+    GICInterface->CTLR |= (1UL << 3); /* FIQEn: Group 0 interrupts -> FIQ */
 
-    __enable_fiq(); /* unmask FIQ in the CPSR */
+    __enable_fault_irq(); /* unmask FIQ in the CPSR */
 }
 
 /*
@@ -264,18 +264,15 @@ void zynq_fiq_init(void) {
  * CPU; this programs the bank of the executing core.
  */
 void zynq_fiq_enable(uint32_t id) {
-    uint32_t shift;
-
     if (id >= ZYNQ_GIC_NUM_IDS) {
         return;
     }
-    shift = id & 0x1FU;
 
-    GICD->IGROUPR[id / 32U] &= ~(1UL << shift); /* Group 0 -> FIQ path */
-    GICD->IPRIORITYR[id / 4U] =
-        (GICD->IPRIORITYR[id / 4U] & ~(0xFFUL << ((id & 3U) * 8U))) |
-        ((uint32_t)ZYNQ_FIQ_DEFAULT_PRIORITY << ((id & 3U) * 8U));
-    GICD->ISENABLER[id / 32U] = (1UL << shift);
+    /* Group 0 -> FIQ path: clear the source's IGROUPR bit. */
+    GIC_SetGroup((IRQn_Type)id, 0U);
+
+    GIC_SetPriority((IRQn_Type)id, ZYNQ_FIQ_DEFAULT_PRIORITY);
+    GIC_EnableIRQ((IRQn_Type)id);
 }
 
 /* Stop delivering a source to FIQ (distributor enable cleared). */
@@ -283,5 +280,5 @@ void zynq_fiq_disable(uint32_t id) {
     if (id >= ZYNQ_GIC_NUM_IDS) {
         return;
     }
-    GICD->ICENABLER[id / 32U] = (1UL << (id & 0x1FU));
+    GIC_DisableIRQ((IRQn_Type)id);
 }

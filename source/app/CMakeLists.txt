@@ -15,14 +15,11 @@ target_link_options("app"
     PRIVATE
 )
 
+# Chip assets, specified the same way the rest of the SDK is: SDK_* variables
+# consumed by the functions in scripts/cmake/.
 set(SDK_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/linker/flash_xip.ld")
+set(SDK_BITSTREAM     "${CMAKE_SOURCE_DIR}/scripts/bitstream/bitstream.bin")
 
+function_gcc_arm_bitstream("app")
 function_gcc_arm_gen_binary("app")
-
-add_custom_command(TARGET "app" POST_BUILD
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_SOURCE_DIR}/scripts/validate_boot_header.py"
-        "$<TARGET_FILE_DIR:app>/app.bin"
-    COMMENT "Validating BootROM header of app.bin"
-    VERBATIM
-)
+function_validate_boot_header("app")

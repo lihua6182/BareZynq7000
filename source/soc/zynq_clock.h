@@ -53,4 +53,39 @@ typedef struct {
 
 void zynq_clock_freqs_get(zynq_clock_freqs_type* freqs);
 
+/*
+ * PL output clocks (FCLK0-3, SLCR FPGA0-3_CLK_CTRL). FCLK = PLL_src /
+ * (div0 * div1); both divisors are one-based 6-bit fields (1..63), pass 1
+ * in div1 when no cascade is needed. The source multiplexer is not
+ * glitch-free (UG585 ch. 25), so zynq_clock_fclk_config gates the clock
+ * (CLKACT = 0) around the register update - expect the FCLK line to stop
+ * briefly - while the divisors themselves are glitch-free and may be
+ * changed live. The throttle registers (FPGAx_THR_*) stay at reset
+ * (continuous clock).
+ */
+typedef enum {
+    ZYNQ_FCLK_0 = 0,
+    ZYNQ_FCLK_1 = 1,
+    ZYNQ_FCLK_2 = 2,
+    ZYNQ_FCLK_3 = 3
+} zynq_fclk_type;
+
+typedef enum {
+    ZYNQ_FCLK_SRC_IO_PLL = 0x0,
+    ZYNQ_FCLK_SRC_ARM_PLL = 0x2,
+    ZYNQ_FCLK_SRC_DDR_PLL = 0x3
+} zynq_fclk_src_type;
+
+/* Program source, both divisors and the enable of one FCLK route. Returns
+   false (without touching the hardware) for an out-of-range argument. */
+bool zynq_clock_fclk_config(zynq_fclk_type fclk, zynq_fclk_src_type src,
+                            uint32_t div0, uint32_t div1, bool enable);
+
+/* Gate one FCLK route on/off; the divisors and source are preserved. */
+void zynq_clock_fclk_enable(zynq_fclk_type fclk, bool enable);
+
+/* Frequency the PL actually sees on one FCLK route: 0 when the route is
+   gated off, otherwise PLL_src / (div0 * div1) read back from the SLCR. */
+uint32_t zynq_clock_fclk_freq_get(zynq_fclk_type fclk);
+
 #endif

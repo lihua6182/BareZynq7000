@@ -35,16 +35,13 @@
 #define USB0_BASE    (0XE0002000UL)
 #define USB1_BASE    (0XE0003000UL)
 #define OCM_BASE     (0XF800C000UL)
-#define SMC_BASE     (0XE000E000UL)
+#define SMC_BASE     (0XE1000000UL)
 #define AFI0_BASE    (0XF8008000UL)
 #define AFI1_BASE    (0XF8009000UL)
 #define AFI2_BASE    (0XF800A000UL)
 #define AFI3_BASE    (0XF800B000UL)
-#define GICD_BASE    (0xF8F01000UL)
-#define GICC_BASE    (0xF8F00100UL)
 #define MPCORE_BASE  (0xF8F00000UL)
 #define XADC_BASE    (0XF8007100UL)
-#define L2C_BASE     (0XF8F02000UL)
 
 typedef struct {                           /* System Level Control Registers (SLCR) */
     __IO uint32_t SCL;                     /* 0x000  */
@@ -241,7 +238,7 @@ typedef struct {                              /* DDR Memory Controller (DDRC) */
     __IO uint32_t LPR;                        /* 0x00C LPR Queue control */
     __IO uint32_t WR_REG;                     /* 0x010 WR Queue control */
     __IO uint32_t DRAM_PARAM_REG0;            /* 0x014 DRAM Parameters 0 */
-    uint32_t RESERVED0;                       /* Reserved, 0x018 */
+    __IO uint32_t DRAM_PARAM_REG1;            /* 0x018 DRAM Parameters 1 */
     __IO uint32_t DRAM_PARAM_REG2;            /* 0x01C DRAM Parameters 2 */
     __IO uint32_t DRAM_PARAM_REG3;            /* 0x020 DRAM Parameters 3 (mixed access) */
     __IO uint32_t DRAM_PARAM_REG4;            /* 0x024 DRAM Parameters 4 (mixed access) */
@@ -721,7 +718,8 @@ typedef struct {                               /* SD/SDIO Controller (ARASAN) */
     __IO uint32_t HOST_CTRL1;                  /* 0x028 Host Control 1 */
     __IO uint32_t CLK_CTRL;                    /* 0x02C Clock Control */
     __IO uint32_t NORMAL_INTERRUPT_STAT;       /* 0x030  */
-    uint32_t RESERVED0[2];                     /* Reserved, 0x034-0x03B */
+    __IO uint32_t NORM_INTR_STAT_EN;           /* 0x034 Normal/Error Interrupt Status Enable (16-bit regs at 0x34/0x36) */
+    __IO uint32_t NORM_INTR_SIG_EN;            /* 0x038 Normal/Error Interrupt Signal Enable (16-bit regs at 0x38/0x3A) */
     __I uint32_t AUTO_CMD12_ERROR_STATUS;      /* 0x03C  */
     __I uint32_t CAPS;                         /* 0x040 Capabilities Register */
     uint32_t RESERVED1;                        /* Reserved, 0x044 */
@@ -898,7 +896,7 @@ typedef struct {                                  /* USB 2.0 ULPI Controller */
     __IO uint32_t ENDPTPRIME;                     /* 0x1B0  */
     __IO uint32_t ENDPTFLUSH;                     /* 0x1B4  */
     __IO uint32_t ENDPTSTAT;                      /* 0x1B8  */
-    uint32_t RESERVED7;                           /* Reserved, 0x1BC */
+    __IO uint32_t ENDPTCOMPLETE;                  /* 0x1BC  (rc/w1c) */
     __IO uint32_t ENDPTCTRL0;                     /* 0x1C0  (mixed access) */
     __IO uint32_t ENDPTCTRL1;                     /* 0x1C4  (mixed access) */
     __IO uint32_t ENDPTCTRL2;                     /* 0x1C8  */
@@ -969,94 +967,22 @@ typedef struct {                         /* AXI High-Performance Port (AFI) */
     __IO uint32_t AFI_WRDEBUG;           /* 0x024  */
 } AFI_Type;
 
-typedef struct {                   /* XADC / ADC On-Chip (12-bit ADC) */
-    __IO uint32_t CFG;             /* 0x000 Configuration Register */
-    __IO uint32_t INT_STS;         /* 0x004 Interrupt Status Register */
-    __IO uint32_t INT_MASK;        /* 0x008 Interrupt Mask Register */
-    __IO uint32_t MSTS;            /* 0x00C Misc status register */
-    __IO uint32_t CMDFIFO;         /* 0x010 Command FIFO Register */
-    __IO uint32_t RDFIFO;          /* 0x014 Read FIFO Register */
-    __IO uint32_t MCTL;            /* 0x018 Misc control register */
-    __IO uint32_t AUX12;           /* 0x01C ADC out of VAUXP12/VAUXN12 */
-    __IO uint32_t MAX_TEMP;        /* 0x020 Max Temperature Reg */
-    __IO uint32_t MIN_TEMP;        /* 0x024 Min Temperature Reg */
-    __IO uint32_t MAX_VCCPINT;     /* 0x028 Max VCCPINT Register, Zynq */
-    __IO uint32_t MIN_VCCPINT;     /* 0x02C Min VCCPINT Register, Zynq */
-    uint32_t RESERVED0;            /* Reserved, 0x030 */
-    __IO uint32_t UNLK;            /* 0x034 Unlock Register */
-    uint32_t RESERVED1[2];         /* Reserved, 0x038-0x03F */
-    __IO uint32_t CFR0;            /* 0x040 Configuration Register 0 */
-    uint32_t RESERVED2;            /* Reserved, 0x044 */
-    __IO uint32_t SEQ00;           /* 0x048 Seq Reg 00 Adc Channel Selection */
-    __IO uint32_t SEQ04;           /* 0x04C Seq Reg 04 Adc Input Mode Select */
-    __IO uint32_t ATR_TEMP_UPPER;  /* 0x050 Temp Upper Alarm Register */
-    __IO uint32_t ATR_TEMP_LOWER;  /* 0x054 Temp Lower Alarm Register */
-    __IO uint32_t ATR_VBRAM_UPPER; /* 0x058 VBRAM Upper Alarm, 7 series */
-    __IO uint32_t ATR_VBRAM_LOWER; /* 0x05C VRBAM Lower Alarm, 7 Series */
+/*
+ * PS-XADC interface (UG585 ch. 30). Only these seven registers exist at
+ * 0xF8007100-0xF8007118; everything above is reserved. The XADC DRP
+ * registers (CFR0/SEQ/ATR/..., addressed by the XADC_* macros further
+ * below) are NOT memory mapped here: they are reached by pushing DRP
+ * addresses through CMDFIFO and reading results from RDFIFO.
+ */
+typedef struct {            /* XADC / ADC On-Chip (12-bit ADC) */
+    __IO uint32_t CFG;      /* 0x000 Configuration Register */
+    __IO uint32_t INT_STS;  /* 0x004 Interrupt Status Register */
+    __IO uint32_t INT_MASK; /* 0x008 Interrupt Mask Register */
+    __I uint32_t MSTS;      /* 0x00C Misc status register */
+    __O uint32_t CMDFIFO;   /* 0x010 Command FIFO Register (wo) */
+    __I uint32_t RDFIFO;    /* 0x014 Read FIFO Register (ro) */
+    __IO uint32_t MCTL;     /* 0x018 Misc control register */
 } XADC_Type;
-
-typedef struct {                            /* L2 Cache Controller (PL310) */
-    __IO uint32_t ID;                       /* 0x000  */
-    __IO uint32_t TYPE;                     /* 0x004  */
-    uint32_t RESERVED0[62];                 /* Reserved, 0x008-0x0FF */
-    __IO uint32_t CNTRL;                    /* 0x100  */
-    __IO uint32_t AUX_CNTRL;                /* 0x104  */
-    __IO uint32_t TAG_RAM_CNTRL;            /* 0x108  */
-    __IO uint32_t DATA_RAM_CNTRL;           /* 0x10C  */
-    uint32_t RESERVED1[60];                 /* Reserved, 0x110-0x1FF */
-    __IO uint32_t EVNT_CNTRL;               /* 0x200  */
-    __IO uint32_t EVNT_CNT1_CTRL;           /* 0x204  */
-    __IO uint32_t EVNT_CNT0_CTRL;           /* 0x208  */
-    __IO uint32_t EVNT_CNT1_VAL;            /* 0x20C  */
-    __IO uint32_t EVNT_CNT0_VAL;            /* 0x210  */
-    __IO uint32_t IER;                      /* 0x214 Interrupt Mask */
-    __IO uint32_t IPR;                      /* 0x218 Masked interrupt status */
-    __IO uint32_t ISR;                      /* 0x21C Raw Interrupt Status */
-    __IO uint32_t IAR;                      /* 0x220 Interrupt Clear */
-    uint32_t RESERVED2[323];                /* Reserved, 0x224-0x72F */
-    __IO uint32_t CACHE_SYNC;               /* 0x730 Cache Sync */
-    uint32_t RESERVED3[3];                  /* Reserved, 0x734-0x73F */
-    __IO uint32_t DUMMY_CACHE_SYNC;         /* 0x740 Dummy Register for Cache Sync */
-    uint32_t RESERVED4[11];                 /* Reserved, 0x744-0x76F */
-    __IO uint32_t CACHE_INVLD_PA;           /* 0x770 Cache Invalid by PA */
-    uint32_t RESERVED5[2];                  /* Reserved, 0x774-0x77B */
-    __IO uint32_t CACHE_INVLD_WAY;          /* 0x77C Cache Invalid by Way */
-    uint32_t RESERVED6[12];                 /* Reserved, 0x780-0x7AF */
-    __IO uint32_t CACHE_CLEAN_PA;           /* 0x7B0 Cache Clean by PA */
-    uint32_t RESERVED7;                     /* Reserved, 0x7B4 */
-    __IO uint32_t CACHE_CLEAN_INDX;         /* 0x7B8 Cache Clean by Index */
-    __IO uint32_t CACHE_CLEAN_WAY;          /* 0x7BC Cache Clean by Way */
-    uint32_t RESERVED8[12];                 /* Reserved, 0x7C0-0x7EF */
-    __IO uint32_t CACHE_INV_CLN_PA;         /* 0x7F0 Cache Invalidate and Clean by PA */
-    uint32_t RESERVED9;                     /* Reserved, 0x7F4 */
-    __IO uint32_t CACHE_INV_CLN_INDX;       /* 0x7F8 Cache Invalidate and Clean by Index */
-    __IO uint32_t CACHE_INV_CLN_WAY;        /* 0x7FC Cache Invalidate and Clean by Way */
-    uint32_t RESERVED10[64];                /* Reserved, 0x800-0x8FF */
-    __IO uint32_t CACHE_DLCKDWN_0_WAY;      /* 0x900 Cache Data Lockdown 0 by Way */
-    __IO uint32_t CACHE_ILCKDWN_0_WAY;      /* 0x904 Cache Instruction Lockdown 0 by Way */
-    __IO uint32_t CACHE_DLCKDWN_1_WAY;      /* 0x908 Cache Data Lockdown 1 by Way */
-    __IO uint32_t CACHE_ILCKDWN_1_WAY;      /* 0x90C Cache Instruction Lockdown 1 by Way */
-    __IO uint32_t CACHE_DLCKDWN_2_WAY;      /* 0x910 Cache Data Lockdown 2 by Way */
-    __IO uint32_t CACHE_ILCKDWN_2_WAY;      /* 0x914 Cache Instruction Lockdown 2 by Way */
-    __IO uint32_t CACHE_DLCKDWN_3_WAY;      /* 0x918 Cache Data Lockdown 3 by Way */
-    __IO uint32_t CACHE_ILCKDWN_3_WAY;      /* 0x91C Cache Instruction Lockdown 3 by Way */
-    __IO uint32_t CACHE_DLCKDWN_4_WAY;      /* 0x920 Cache Data Lockdown 4 by Way */
-    __IO uint32_t CACHE_ILCKDWN_4_WAY;      /* 0x924 Cache Instruction Lockdown 4 by Way */
-    __IO uint32_t CACHE_DLCKDWN_5_WAY;      /* 0x928 Cache Data Lockdown 5 by Way */
-    __IO uint32_t CACHE_ILCKDWN_5_WAY;      /* 0x92C Cache Instruction Lockdown 5 by Way */
-    __IO uint32_t CACHE_DLCKDWN_6_WAY;      /* 0x930 Cache Data Lockdown 6 by Way */
-    __IO uint32_t CACHE_ILCKDWN_6_WAY;      /* 0x934 Cache Instruction Lockdown 6 by Way */
-    __IO uint32_t CACHE_DLCKDWN_7_WAY;      /* 0x938 Cache Data Lockdown 7 by Way */
-    __IO uint32_t CACHE_ILCKDWN_7_WAY;      /* 0x93C Cache Instruction Lockdown 7 by Way */
-    uint32_t RESERVED11[4];                 /* Reserved, 0x940-0x94F */
-    __IO uint32_t CACHE_LCKDWN_LINE_ENABLE; /* 0x950 Cache Lockdown Line Enable */
-    __IO uint32_t CACHE_UUNLOCK_ALL_WAY;    /* 0x954 Cache Unlock All Lines by Way */
-    uint32_t RESERVED12[170];               /* Reserved, 0x958-0xBFF */
-    __IO uint32_t ADDR_FILTER_START;        /* 0xC00 Start of address filtering */
-    __IO uint32_t ADDR_FILTER_END;          /* 0xC04 Start of address filtering */
-    uint32_t RESERVED13[206];               /* Reserved, 0xC08-0xF3F */
-    __IO uint32_t DEBUG_CTRL;               /* 0xF40 Debug Control Register */
-} L2C_Type;
 
 typedef struct {                        /* Cortex-A9 MPCore Private Peripheral Block */
     __IO uint32_t SCU_CONTROL;          /* 0x000 SCU Control Register */
@@ -1089,54 +1015,6 @@ typedef struct {                        /* Cortex-A9 MPCore Private Peripheral B
     __IO uint32_t WD_ISR;               /* 0x62C CPU Private Watchdog Interrupt Status Register */
 } MPCORE_Type;
 
-typedef struct {                  /* GIC Distributor */
-    __IO uint32_t CTLR;           /* 0x000 Distributor Control */
-    __I uint32_t TYPER;           /* 0x004 Interrupt Controller Type */
-    __I uint32_t IIDR;            /* 0x008 Implementer ID */
-    uint32_t RESERVED0[29];       /* Reserved, 0x00C-0x07F */
-    __IO uint32_t IGROUPR[3];     /* 0x080 Interrupt Security (banked) */
-    uint32_t RESERVED1[29];       /* Reserved, 0x08C-0x0FF */
-    __IO uint32_t ISENABLER[3];   /* 0x100 Interrupt Set-Enable (banked) */
-    uint32_t RESERVED2[29];       /* Reserved, 0x10C-0x17F */
-    __IO uint32_t ICENABLER[3];   /* 0x180 Interrupt Clear-Enable (banked) */
-    uint32_t RESERVED3[29];       /* Reserved, 0x18C-0x1FF */
-    __IO uint32_t ISPENDR[3];     /* 0x200 Interrupt Set-Pending (banked) */
-    uint32_t RESERVED4[29];       /* Reserved, 0x20C-0x27F */
-    __IO uint32_t ICPENDR[3];     /* 0x280 Interrupt Clear-Pending (banked) */
-    uint32_t RESERVED5[29];       /* Reserved, 0x28C-0x2FF */
-    __I uint32_t ISACTIVER[3];    /* 0x300 Interrupt Active Status (banked) */
-    uint32_t RESERVED6[61];       /* Reserved, 0x30C-0x3FF */
-    __IO uint32_t IPRIORITYR[24]; /* 0x400 Interrupt Priority Level */
-    uint32_t RESERVED7[232];      /* Reserved, 0x460-0x7FF */
-    __IO uint32_t ITARGETSR[24];  /* 0x800 SPI Interrupt CPU Targets */
-    uint32_t RESERVED8[232];      /* Reserved, 0x860-0xBFF */
-    __IO uint32_t ICFGR[48];      /* 0xC00 Interrupt Configuration */
-    uint32_t RESERVED9[16];       /* Reserved, 0xCC0-0xCFF */
-    __I uint32_t PPISR;           /* 0xD00 PPI Status Register */
-    __I uint32_t SPISR;           /* 0xD04 SPI Status Register */
-    uint32_t RESERVED10[30];      /* Reserved, 0xD08-0xD7F */
-    __IO uint32_t AHBCFGR;        /* 0xD80 AHB Configuration Register */
-    uint32_t RESERVED11[95];      /* Reserved, 0xD84-0xEFF */
-    __O uint32_t SGIR;            /* 0xF00 Software Generated Interrupt */
-    uint32_t RESERVED12[51];      /* Reserved, 0xF04-0xFCF */
-    __I uint32_t PERIPHID[4];     /* 0xFD0 Peripheral ID Registers */
-    uint32_t RESERVED13[4];       /* Reserved, 0xFE0-0xFEF */
-    __I uint32_t PCELLID[4];      /* 0xFF0 Component ID Registers */
-} GICD_Type;
-
-typedef struct {            /* GIC CPU Interface */
-    __IO uint32_t CTLR;     /* 0x000 CPU Interface Control */
-    __IO uint32_t PMR;      /* 0x004 Interrupt Priority Mask */
-    __IO uint32_t BPR;      /* 0x008 Binary Point */
-    __I uint32_t IAR;       /* 0x00C Interrupt Acknowledge */
-    __O uint32_t EOIR;      /* 0x010 End of Interrupt */
-    __I uint32_t RPR;       /* 0x014 Running Priority */
-    __I uint32_t HPPIR;     /* 0x018 Highest Pending Interrupt */
-    __IO uint32_t ABPR;     /* 0x01C Aliased Non-secure Binary Point */
-    uint32_t RESERVED0[55]; /* Reserved, 0x020-0x0FB */
-    __I uint32_t IIDR;      /* 0x0FC CPU Interface Implementer ID */
-} GICC_Type;
-
 #define SLCR    ((SLCR_Type*)SLCR_BASE)
 #define DDRC    ((DDRC_Type*)DDRC_BASE)
 #define DEVCFG  ((DEVCFG_Type*)DEVCFG_BASE)
@@ -1167,12 +1045,9 @@ typedef struct {            /* GIC CPU Interface */
 #define AFI1    ((AFI_Type*)AFI1_BASE)
 #define AFI2    ((AFI_Type*)AFI2_BASE)
 #define AFI3    ((AFI_Type*)AFI3_BASE)
-#define GICD    ((GICD_Type*)GICD_BASE)
-#define GICC    ((GICC_Type*)GICC_BASE)
 #define MPCORE  ((MPCORE_Type*)MPCORE_BASE)
 
 #define XADC ((XADC_Type*)XADC_BASE)
-#define L2C  ((L2C_Type*)L2C_BASE)
 
 /*****************  SLCR keys  *****************/
 #define SLCR_LOCK_KEY   (0x767BU) /* Key to lock SLCR writes   */
@@ -2825,8 +2700,6 @@ typedef struct {            /* GIC CPU Interface */
 #define XADC_JTAG_CMD_Pos       (26U)
 #define XADC_JTAG_CMD_Msk       (0x3C000000UL) /* Mask for the Cmd */
 
-#define XADC_UNLK_VALUE (0x757BDF0DUL) /* Unlock Value */
-
 /*****************  Bit definitions for DMAC  *****************/
 #define DMAC_DS_DMA_STATUS_STOPPED (0x0UL) /* debug status busy mask */
 #define DMAC_DS_DMA_STATUS         (0xFUL) /* DMA status mask */
@@ -2856,12 +2729,18 @@ typedef struct {            /* GIC CPU Interface */
 #define DEVCFG_CTRL_JTAG_CHAIN_DIS_Msk  (0x800000UL) /* JTAG Chain Disable */
 #define DEVCFG_CTRL_MULTIBOOT_EN_Pos    (24U)
 #define DEVCFG_CTRL_MULTIBOOT_EN_Msk    (0x1000000UL) /* Multiboot Enable */
+#define DEVCFG_CTRL_PCAP_RATE_EN_Pos    (25U)
+#define DEVCFG_CTRL_PCAP_RATE_EN_Msk    (0x2000000UL) /* Quarter PCAP rate (AES) */
 #define DEVCFG_CTRL_PCAP_MODE_Pos       (26U)
 #define DEVCFG_CTRL_PCAP_MODE_Msk       (0x4000000UL) /* Enable PCAP */
 #define DEVCFG_CTRL_PCAP_PR_Pos         (27U)
 #define DEVCFG_CTRL_PCAP_PR_Msk         (0x8000000UL) /* Enable PCAP for PR */
 #define DEVCFG_CTRL_PCFG_POR_CNT_4K_Pos (29U)
 #define DEVCFG_CTRL_PCFG_POR_CNT_4K_Msk (0x20000000UL) /* Control PL POR timer */
+#define DEVCFG_CTRL_PCFG_PROG_B_Pos     (30U)
+#define DEVCFG_CTRL_PCFG_PROG_B_Msk     (0x40000000UL) /* PROG_B reset to the PL */
+#define DEVCFG_CTRL_FORCE_RST_Pos       (31U)
+#define DEVCFG_CTRL_FORCE_RST_Msk       (0x80000000UL) /* Secure lockdown */
 
 #define DEVCFG_LOCK_SEU_Pos       (2U)
 #define DEVCFG_LOCK_SEU_Msk       (0x4UL) /* Lock SEU_En update */
@@ -2882,26 +2761,52 @@ typedef struct {            /* GIC CPU Interface */
 #define DEVCFG_IXR_PCFG_HMAC_ERR_Msk (0x40UL) /* HMAC error mask */
 #define DEVCFG_IXR_DMA_DONE_Pos      (13U)
 #define DEVCFG_IXR_DMA_DONE_Msk      (0x2000UL) /* DMA Command Done */
+#define DEVCFG_IXR_P2D_LEN_ERR_Pos   (11U)
+#define DEVCFG_IXR_P2D_LEN_ERR_Msk   (0x800UL) /* PCAP/DMA length mismatch */
+#define DEVCFG_IXR_DMA_Q_OV_Pos      (14U)
+#define DEVCFG_IXR_DMA_Q_OV_Msk      (0x4000UL) /* DMA command queue overflow */
 #define DEVCFG_IXR_DMA_CMD_ERR_Pos   (15U)
 #define DEVCFG_IXR_DMA_CMD_ERR_Msk   (0x8000UL) /* Illegal DMA command */
+#define DEVCFG_IXR_RD_FIFO_LVL_Pos   (16U)
+#define DEVCFG_IXR_RD_FIFO_LVL_Msk   (0x10000UL) /* Rx FIFO level */
+#define DEVCFG_IXR_WR_FIFO_LVL_Pos   (17U)
+#define DEVCFG_IXR_WR_FIFO_LVL_Msk   (0x20000UL) /* Tx FIFO level */
 #define DEVCFG_IXR_RX_FIFO_OV_Pos    (18U)
-#define DEVCFG_IXR_RX_FIFO_OV_Msk    (0x40000UL)  /* Rx FIFO Overflow */
+#define DEVCFG_IXR_RX_FIFO_OV_Msk    (0x40000UL) /* Rx FIFO Overflow */
+#define DEVCFG_IXR_AXI_RERR_Pos      (20U)
+#define DEVCFG_IXR_AXI_RERR_Msk      (0x100000UL) /* AXI read response error */
+#define DEVCFG_IXR_AXI_RTO_Pos       (21U)
+#define DEVCFG_IXR_AXI_RTO_Msk       (0x200000UL) /* AXI read timeout */
+#define DEVCFG_IXR_AXI_WERR_Pos      (22U)
+#define DEVCFG_IXR_AXI_WERR_Msk      (0x400000UL) /* AXI write response error */
+#define DEVCFG_IXR_AXI_WTO_Pos       (23U)
+#define DEVCFG_IXR_AXI_WTO_Msk       (0x800000UL) /* AXI write timeout */
 #define DEVCFG_IXR_ALL_Msk           (0xF7F8EFUL) /*  (non-contiguous) */
 #define DEVCFG_IXR_PSS_GPWRDWN_B_Pos (29U)
 #define DEVCFG_IXR_PSS_GPWRDWN_B_Msk (0x20000000UL) /* Global power down */
 
 #define DEVCFG_STATUS_EFUSE_BBRAM_KEY_DISABLE_Pos (3U)
-#define DEVCFG_STATUS_EFUSE_BBRAM_KEY_DISABLE_Msk (0x8UL)   /*  */
+#define DEVCFG_STATUS_EFUSE_BBRAM_KEY_DISABLE_Msk (0x8UL) /*  */
+#define DEVCFG_STATUS_PCFG_INIT_Pos               (4U)
+#define DEVCFG_STATUS_PCFG_INIT_Msk               (0x10UL)  /* PL ready for PCAP data */
 #define DEVCFG_STATUS_PSS_GPWRDWN_B               (0x200UL) /* Global power down */
+#define DEVCFG_STATUS_DMA_DONE_CNT_Pos            (28U)
+#define DEVCFG_STATUS_DMA_DONE_CNT_Msk            (0x30000000UL) /* Finished, unacknowledged DMA transfers */
 #define DEVCFG_STATUS_TX_FIFO_LVL_Pos             (12U)
 #define DEVCFG_STATUS_TX_FIFO_LVL_Msk             (0x7F000UL) /* Tx FIFO level */
-#define DEVCFG_STATUS_RX_FIFO_LVL_Pos             (24U)
-#define DEVCFG_STATUS_RX_FIFO_LVL_Msk             (0x1F000000UL) /* Rx FIFO level */
+#define DEVCFG_STATUS_RX_FIFO_LVL_Pos             (20U)
+#define DEVCFG_STATUS_RX_FIFO_LVL_Msk             (0x1F00000UL) /* Rx FIFO level */
+#define DEVCFG_STATUS_DMA_CMD_Q_E_Pos             (30U)
+#define DEVCFG_STATUS_DMA_CMD_Q_E_Msk             (0x40000000UL) /* DMA command queue empty */
+#define DEVCFG_STATUS_DMA_CMD_Q_F_Pos             (31U)
+#define DEVCFG_STATUS_DMA_CMD_Q_F_Msk             (0x80000000UL) /* DMA command queue full */
 
 #define DEVCFG_DMA_LEN_Pos         (0U)
 #define DEVCFG_DMA_LEN_Msk         (0x7FFFFFFUL)  /* Length Mask */
 #define DEVCFG_DMA_INVALID_ADDRESS (0xFFFFFFFFUL) /* Invalid DMA address */
 
+#define DEVCFG_MCTRL_PCFG_POR_B_Pos      (8U)
+#define DEVCFG_MCTRL_PCFG_POR_B_Msk      (0x100UL) /* PL power status: 1 = PL powered */
 #define DEVCFG_MCTRL_PCAP_LPBK_Pos       (4U)
 #define DEVCFG_MCTRL_PCAP_LPBK_Msk       (0x10UL) /* PCAP loopback mask */
 #define DEVCFG_MCTRL_PCAP_PS_VERSION_Pos (28U)
@@ -3003,89 +2908,5 @@ typedef struct {            /* GIC CPU Interface */
 
 #define NAND_PCELL_ID_Pos (0U)
 #define NAND_PCELL_ID_Msk (0xFFUL) /*  */
-
-/*****************  Bit definitions for L2C  *****************/
-#define L2C_ENABLE_MASK_Pos (0U)
-#define L2C_ENABLE_MASK_Msk (0x1UL) /* enables the L2CC */
-
-#define L2C_AUX_FLZE_Pos        (0U)
-#define L2C_AUX_FLZE_Msk        (0x1UL) /* Full line of zero enable */
-#define L2C_AUX_HPSODRE_Pos     (10U)
-#define L2C_AUX_HPSODRE_Msk     (0x400UL) /* High Priority for SO and Dev Reads Enable */
-#define L2C_AUX_SBDLE_Pos       (11U)
-#define L2C_AUX_SBDLE_Msk       (0x800UL) /* Store buffer device limitation Enable */
-#define L2C_AUX_EXCL_CACHE_Pos  (12U)
-#define L2C_AUX_EXCL_CACHE_Msk  (0x1000UL) /* Exclusive cache configuration */
-#define L2C_AUX_SAIE_Pos        (13U)
-#define L2C_AUX_SAIE_Msk        (0x2000UL) /* Shared attribute invalidate enable */
-#define L2C_AUX_ASSOC_Pos       (16U)
-#define L2C_AUX_ASSOC_Msk       (0x10000UL) /* Associativity */
-#define L2C_AUX_WAY_SIZE_Pos    (17U)
-#define L2C_AUX_WAY_SIZE_Msk    (0xE0000UL) /* Way-size */
-#define L2C_AUX_EMBE_Pos        (20U)
-#define L2C_AUX_EMBE_Msk        (0x100000UL) /* Event monitor bus enable */
-#define L2C_AUX_PE_Pos          (21U)
-#define L2C_AUX_PE_Msk          (0x200000UL) /* Parity enable */
-#define L2C_AUX_SAOE_Pos        (22U)
-#define L2C_AUX_SAOE_Msk        (0x400000UL) /* Shared attribute override enable */
-#define L2C_AUX_FWE_Pos         (23U)
-#define L2C_AUX_FWE_Msk         (0x1800000UL) /* Force write allocate */
-#define L2C_AUX_CRP_Pos         (25U)
-#define L2C_AUX_CRP_Msk         (0x2000000UL) /* Cache replacement policy */
-#define L2C_AUX_NSLE_Pos        (26U)
-#define L2C_AUX_NSLE_Msk        (0x4000000UL) /* Non-secure lockdown enable */
-#define L2C_AUX_NSIC_Pos        (27U)
-#define L2C_AUX_NSIC_Msk        (0x8000000UL) /* Non-secure interrupt access control */
-#define L2C_AUX_DPFE_Pos        (28U)
-#define L2C_AUX_DPFE_Msk        (0x10000000UL) /* Data Prefetch Enable */
-#define L2C_AUX_IPFE_Pos        (29U)
-#define L2C_AUX_IPFE_Msk        (0x20000000UL) /* Instruction Prefetch Enable */
-#define L2C_AUX_EBRESPE_Pos     (30U)
-#define L2C_AUX_EBRESPE_Msk     (0x40000000UL) /* Early BRESP Enable */
-#define L2C_AUX_REG_DEFAULT_Msk (0x72360000UL) /* Enable all prefetching, (non-contiguous) */
-#define L2C_AUX_REG_ZERO_Msk    (0xFFF1FFFFUL) /*  (non-contiguous) */
-
-#define L2C_TAG_RAM_DEFAULT_Msk (0x111UL) /* latency for TAG RAM (non-contiguous) */
-
-#define L2C_DATA_RAM_DEFAULT_Msk (0x121UL) /* latency for DATA RAM (non-contiguous) */
-
-#define L2C_IXR_ECNTR_Pos  (0U)
-#define L2C_IXR_ECNTR_Msk  (0x1UL) /* Event Counter1/0 Overflow Increment */
-#define L2C_IXR_PARRT_Pos  (1U)
-#define L2C_IXR_PARRT_Msk  (0x2UL) /* Parity Error on L2 tag RAM (Read) */
-#define L2C_IXR_PARRD_Pos  (2U)
-#define L2C_IXR_PARRD_Msk  (0x4UL) /* Parity Error on L2 data RAM (Read) */
-#define L2C_IXR_ERRWT_Pos  (3U)
-#define L2C_IXR_ERRWT_Msk  (0x8UL) /* Error on L2 tag RAM (Write) */
-#define L2C_IXR_ERRWD_Pos  (4U)
-#define L2C_IXR_ERRWD_Msk  (0x10UL) /* Error on L2 data RAM (Write) */
-#define L2C_IXR_ERRRT_Pos  (5U)
-#define L2C_IXR_ERRRT_Msk  (0x20UL) /* Error on L2 tag RAM (Read) */
-#define L2C_IXR_ERRRD_Pos  (6U)
-#define L2C_IXR_ERRRD_Msk  (0x40UL) /* Error on L2 data RAM (Read) */
-#define L2C_IXR_SLVERR_Pos (7U)
-#define L2C_IXR_SLVERR_Msk (0x80UL) /* SLVERR from L3 */
-#define L2C_IXR_DECERR_Pos (8U)
-#define L2C_IXR_DECERR_Msk (0x100UL) /* DECERR from L3 */
-
-#define L2C_ADDR_FILTER_ENABLE_Pos (0U)
-#define L2C_ADDR_FILTER_ENABLE_Msk (0x1UL) /* Address filtering enable bit */
-#define L2C_ADDR_FILTER_VALID_Pos  (20U)
-#define L2C_ADDR_FILTER_VALID_Msk  (0xFFF00000UL) /* Address filtering valid bits */
-
-#define L2C_DEBUG_DCL_Pos    (0U)
-#define L2C_DEBUG_DCL_Msk    (0x1UL) /* Debug DCL bit, disables cache line fill */
-#define L2C_DEBUG_DWB_Pos    (1U)
-#define L2C_DEBUG_DWB_Msk    (0x2UL) /* Debug DWB bit, forces write through */
-#define L2C_DEBUG_SPIDEN_Pos (2U)
-#define L2C_DEBUG_SPIDEN_Msk (0x4UL) /* Debug SPIDEN bit */
-
-/*****************  GIC bits  *****************/
-#define GICD_CTLR_ENABLE_Pos  (0U)
-#define GICD_CTLR_ENABLE_Msk  (0x1UL << GICD_CTLR_ENABLE_Pos)
-#define GICC_CTLR_ENABLE_Pos  (0U)
-#define GICC_CTLR_ENABLE_Msk  (0x1UL << GICC_CTLR_ENABLE_Pos)
-#define GICC_IAR_INTID_Msk    (0x3FFUL) /* Interrupt ID of acknowledged IRQ */
-#define GICC_PMR_PRIOMASK_Msk (0xFFUL)  /* Priority mask level              */
 
 #endif /* ZYNQ7000_H */

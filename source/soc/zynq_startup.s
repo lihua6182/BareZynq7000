@@ -34,9 +34,10 @@ reset_handler:
         bic     r0, r0, #(0x1 << 28)        /* TRE: disable TEX remap        */
         mcr     p15, 0, r0, c1, c0, 0
 
-        // Disable the L2 cache (PL310); this port runs L1-only (see the
-        // note in zynq_system.c). reg1_control sits at L2C base + 0x100,
-        // bit 0 is l2_enable (UG585 appendix A).
+        // Disable the L2 cache (PL310) while the MMU is still off; it is
+        // re-enabled (prefetch off) by mmu_enable() in zynq_system_init.
+        // reg1_control sits at L2C base + 0x100, bit 0 is l2_enable
+        // (UG585 appendix A).
         ldr     r0, =0xF8F02100
         mov     r1, #0
         str     r1, [r0]
@@ -213,6 +214,11 @@ _start:
         /* system_init runs the QSPI/clock reconfiguration from .fast in
            OCM, so the section must be resident before the call. */
         bl      zynq_system_init
+
+        /* Program the PL from the embedded bitstream (no-op when the build
+           carries none; outcome in g_pl_status) so main() starts with the
+           PL already up. */
+        bl      zynq_devcfg_boot
 
         ldr     r4, =__preinit_array_start
         ldr     r5, =__preinit_array_end
