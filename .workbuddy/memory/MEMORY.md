@@ -27,7 +27,17 @@ A-profile 头文件在 `CMSIS/Core/Include/a-profile/`，**不是** `Core/A/Incl
   1. `r`（NORMAL reset）在这套 J-Link V13 + XC7Z010 上**不能真正复位 CPU**（寄存器快照跨"复位"完全一致）；无重烧时的软重启法：`h` → `SetPC 0xFC000900`(reset_handler) → `g`——startup 注释明确支持调试器热复位，会重初始化 .data/.bss。JFlash 的 InitStep reset 只做 halt。
   2. **stop-mode 读是向停机核注入 load**：读未映射 VA（如 0xFFFC0238）→ 注入指令 translation fault → J-Link 恢复后 abort 生效、固件死在 abort 循环；读无响应的 GP0 地址（PL 从设备缺失/复位中）→ 注入 load 永不完成 → 核卡死在该指令上、连 halt 都失败，**只有断电能解**。探测未知地址前先确认 MMU 里有映射且从设备活着。
   3. CPU 运行中读 RAM 走物理地址，write-back cache 里的最新值看不到（jiffies 读出冻结的垃圾是正常假象）；**要看真值先 `h`**。
-- **JFlash RAM loader 压扁固件 RAM（2026-09-29 踩坑）**：JFlash 工程原 `RAMAddr=0x20/RAMSize=0x20000`，每次烧写 SEGGER flash loader（THUMB 程序）装进低 OCM，正好覆盖 .data/.bss/`handlers[]`。烧写后若 CPU 未经 reset_handler 恢复（RAM 不重初始化），GIC/TTC 里残留的 tick 使能 + 垃圾 `handlers[42]`（loader 代码字节，实测 0xF04F2300=`mov.w r3,#0`）→ 野跳转 → prefetch abort。已改 `RAMAddr=0x20000/RAMSize=0x10000`（0x20000-0x30000，所有栈之上）。烧写后仍应断电重启一次最稳。
+- **JFlash RAM loader 与应用 RAM 重叠（2026-09-29 定案，用户判断正确：在线烧录就会跑飞）**：
+  jflash 工程 `RAMAddr=0x20/RAMSize=0x20000`，SEGGER flash loader（THUMB 程序）装进低 OCM，
+  覆盖 .fast/.data/.bss/`handlers[]`。**实测判别：同一固件，不烧写只 SetPC 重启 → 稳；烧写会话后任何方式恢复 →
+  确定性跑飞**（System+THUMB 野执行、abort 在 .fast 区、SP 落错栈区）。挪 RAMAddr 无效：JFlash 只接受
+  0x20/0x20000 这类窗口（0x4000/0x10000 一律编程失败），且 0x20000 窗口顶(0x30000)又撞系统栈顶。
+  **规矩：`RAMAddr=0x20` 保持原样，每次 JFlash 烧写后必须断电重启（或至少 SetPC reset_handler 全量重启），
+  绝不能从 halt 直接 `g` 恢复运行。** 烧写失败(exit 1)会把板子留在坏状态（QSPI/SLCR 被算法改乱、XIP 失效），
+  此时继续重试 JFlash 没用，先断电再来。
+- **OCM_CFG=0x18 是本板正常值**（断电后依然是 0x18），不要把 SWAP 位当成损坏证据；
+  读 flash 内容前先查**当前** map 的符号地址——printf 版 .rodata 变大后 fpga_img 从 0xFC004000 挪到
+  0xFC005000，拿旧地址读出 "bram" 字符串曾误判成 flash 损坏。
 - **`.fast` 段 VMA 从 0x00000000 起址**（链接脚本里它是 RAM 段第一个段）：
   放进 `.fast` 的函数**地址就是 0**。凡是"取地址传给注册接口、接口带 NULL 检查"的地方，
   绝不能收 `.fast` 里的函数（2026-09-29 就因此让 `tick_irq` 被 `irq_attach` 静默拒绑）。
@@ -128,6 +138,16 @@ DMA 完成 ack 要同时写 `INT_STS[13]` 与 `STATUS[DMA_DONE_CNT]`(29:28)、�
 `board_init()` 里 `devcfg_init()` 后，仅当 `FPGA_IMG_LEN != 0` 才 `devcfg_load()`，
 随后 `fclk_config(FCLK0, FCLK_SRC_IO, 10, 1, true)` 给 PL 供 100 MHz，最后清 `FPGA_RST_CTRL` 释放 PL 复位。
 Vivado 工程在 `C:\WorkSpace\fpga\project_1`，换外设后从 `impl_1/design_1_wrapper.bin` 复制到 `source/board/bitstream.bin` 再跑转换脚本。
+
+## 控制台 printf（2026-09-29 迁移到 newlib printf）
+- 链接用 `--specs=nano.specs`（gcc-arm-toolchain.cmake），打印走 `printf`/newlib。
+- 绑定：`main.c` 里强定义 `__io_putchar/__io_getchar`（→ `uart_putc/uart_getc(UART0)`），
+  `syscalls.c`（CubeMX 模板）的弱 `_write/_read` 循环调它们；`_isatty=1` → 行缓冲，输出以 `\n` 结尾即即时刷出。
+- **`_sbrk` 已重写**（sysmem.c）：用本工程链接脚本的 `__heap_start__/__heap_end__` 做界，
+  CubeMX 原版依赖的 `_end/_estack/_Min_Stack_Size` 公式与本布局不符（异常栈固定排在堆后面，
+  按"堆向栈顶长"的公式会撞异常栈）。堆在 flash_xip.ld 里从 1KB 扩到 4KB（newlib stdio 缓冲 malloc 用）。
+- 体积基线变化（BRAM 比特流 + printf）：`app.bin` 98396 → 102616 B，RAM 静态 6084 → 6608 B。
+- 用法注意：`uint32_t` 打印前 cast `(unsigned)` 配 `%u`/`%08X`；printf 首次调用会 malloc（失败则退化为无缓冲，仍可用）。
 
 ## 代码风格
 - **.c 文件的函数注释一律 Doxygen 风格**：`/** ... */` + `@brief` / `@param` / `@return`，
