@@ -1,0 +1,44 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Convert PL bitstream",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/tools/convert_bitstream.py",
+                "${workspaceFolder}/source/board/bitstream.bin",
+                "${workspaceFolder}/source/board/board_fpga.c",
+                "${workspaceFolder}/source/board/board_fpga.h"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Flash (J-Flash QSPI XIP)",
+            "type": "process",
+            "command": "C:\\Program Files\\SEGGER\\JLink_V956\\JFlash.exe",
+            "args": [
+                "-openprjC:\\WorkSpace\\BareZynq7000\\scripts\\jflash\\jflash_zynq7000.jflash",
+                "-auto",
+                "-exit"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

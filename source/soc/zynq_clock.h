@@ -5,8 +5,8 @@
 
 /*
  * Run-time frequency readout of the PS clock tree (UG585 ch. 25). The only
- * hard-coded value is the crystal (ZYNQ_PS_CLK_VALUE in zynq_common.h);
- * every frequency below is recomputed from the live SLCR registers:
+ * hard-coded value is the crystal (PS_CLK_HZ in zynq_common.h); every
+ * frequency below is recomputed from the live SLCR registers:
  *
  *   PLL x = PS_CLK x FDIV (PLL_CTRL[18:12]), or PS_CLK when bypassed
  *   CPU   = cpu mux / DIVISOR (ARM_CLK_CTRL), cpu mux = 0x:ARM 10:DDR 11:IO
@@ -23,7 +23,7 @@
  * (CAN_MIOCLK_CTRL), the debug trace EMIO clock (DBG_CLK_CTRL[6]) and the
  * watchdog source (SWDT_CLK_SEL). Frequencies are in Hz.
  */
-typedef struct {
+struct clk_freqs {
     uint32_t ps_clk;    /* PS_CLK crystal input                        */
     uint32_t arm_pll;   /* ARM PLL output                              */
     uint32_t ddr_pll;   /* DDR PLL output                              */
@@ -49,43 +49,43 @@ typedef struct {
     uint32_t fpga2_ref; /* PL clock 2 (FCLK2)                          */
     uint32_t fpga3_ref; /* PL clock 3 (FCLK3)                          */
     uint32_t smc;       /* SMC clock (gated CPU_1x)                    */
-} zynq_clock_freqs_type;
+};
 
-void zynq_clock_freqs_get(zynq_clock_freqs_type* freqs);
+void clk_freqs_get(struct clk_freqs* freqs);
 
 /*
  * PL output clocks (FCLK0-3, SLCR FPGA0-3_CLK_CTRL). FCLK = PLL_src /
  * (div0 * div1); both divisors are one-based 6-bit fields (1..63), pass 1
  * in div1 when no cascade is needed. The source multiplexer is not
- * glitch-free (UG585 ch. 25), so zynq_clock_fclk_config gates the clock
+ * glitch-free (UG585 ch. 25), so fclk_config gates the clock
  * (CLKACT = 0) around the register update - expect the FCLK line to stop
  * briefly - while the divisors themselves are glitch-free and may be
  * changed live. The throttle registers (FPGAx_THR_*) stay at reset
  * (continuous clock).
  */
-typedef enum {
-    ZYNQ_FCLK_0 = 0,
-    ZYNQ_FCLK_1 = 1,
-    ZYNQ_FCLK_2 = 2,
-    ZYNQ_FCLK_3 = 3
-} zynq_fclk_type;
+enum fclk {
+    FCLK0 = 0,
+    FCLK1 = 1,
+    FCLK2 = 2,
+    FCLK3 = 3
+};
 
-typedef enum {
-    ZYNQ_FCLK_SRC_IO_PLL = 0x0,
-    ZYNQ_FCLK_SRC_ARM_PLL = 0x2,
-    ZYNQ_FCLK_SRC_DDR_PLL = 0x3
-} zynq_fclk_src_type;
+enum fclk_src {
+    FCLK_SRC_IO = 0x0,
+    FCLK_SRC_ARM = 0x2,
+    FCLK_SRC_DDR = 0x3
+};
 
 /* Program source, both divisors and the enable of one FCLK route. Returns
    false (without touching the hardware) for an out-of-range argument. */
-bool zynq_clock_fclk_config(zynq_fclk_type fclk, zynq_fclk_src_type src,
-                            uint32_t div0, uint32_t div1, bool enable);
+bool fclk_config(enum fclk fclk, enum fclk_src src,
+                 uint32_t div0, uint32_t div1, bool enable);
 
 /* Gate one FCLK route on/off; the divisors and source are preserved. */
-void zynq_clock_fclk_enable(zynq_fclk_type fclk, bool enable);
+void fclk_enable(enum fclk fclk, bool enable);
 
 /* Frequency the PL actually sees on one FCLK route: 0 when the route is
    gated off, otherwise PLL_src / (div0 * div1) read back from the SLCR. */
-uint32_t zynq_clock_fclk_freq_get(zynq_fclk_type fclk);
+uint32_t fclk_freq_get(enum fclk fclk);
 
 #endif

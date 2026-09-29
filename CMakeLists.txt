@@ -1,7 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.24)
 
 include("${CMAKE_SOURCE_DIR}/scripts/cmake/function_gcc_arm_gen_binary.cmake")
-include("${CMAKE_SOURCE_DIR}/scripts/cmake/function_gcc_arm_bitstream.cmake")
 include("${CMAKE_SOURCE_DIR}/scripts/cmake/function_validate_boot_header.cmake")
 
 MESSAGE(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")

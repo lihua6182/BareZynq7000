@@ -39,33 +39,33 @@ static void xip_warm_cache(void) __attribute__((section(".fast"), noinline));
  * 0xFB0/0xFB1 alias PA 0x0; other bus masters skip the MMU and see DDR, so
  * DMA must use high OCM. The PL310 (L2) is enabled by mmu_enable().
  */
-static void mmu_init(uint32_t* ptt) {
+static void mmu_init(uint32_t* ttb) {
     uint32_t i;
 
     // unmapped: any access triggers a translation fault
     for (i = 0; i < NUM_TT_ENTRIES; i++) {
-        ptt[i] = 0;
+        ttb[i] = 0;
     }
 
     // Low 192 KB OCM, write-back allocate
-    ptt[0x000] = TT_ENTRY(0x000, TT_WRITE_BACK_ALLOC | TT_AP_RW);
+    ttb[0x000] = TT_ENTRY(0x000, TT_WRITE_BACK_ALLOC | TT_AP_RW);
 
     // PL + IOP peripherals + PS system registers. DDR (0x001-0x3FF) left unmapped.
     for (i = 0x400; i < 0xFA0u; i++) {
-        ptt[i] = TT_ENTRY(i, TT_STRONGLY_ORDERED | TT_AP_RW | TT_XN);
+        ttb[i] = TT_ENTRY(i, TT_STRONGLY_ORDERED | TT_AP_RW | TT_XN);
     }
 
     // CPU-only aliases of the low OCM (VA -> PA 0x0)
-    ptt[0xFB0] = TT_ENTRY(0x000, TT_STRONGLY_ORDERED | TT_AP_RW);
-    ptt[0xFB1] = TT_ENTRY(0x000, TT_NON_CACHEABLE | TT_AP_RW);
+    ttb[0xFB0] = TT_ENTRY(0x000, TT_STRONGLY_ORDERED | TT_AP_RW);
+    ttb[0xFB1] = TT_ENTRY(0x000, TT_NON_CACHEABLE | TT_AP_RW);
 
     // 16 MB QSPI flash, XIP read caching
     for (i = 0xFC0; i < 0xFD0u; i++) {
-        ptt[i] = TT_ENTRY(i, TT_WRITE_BACK_ALLOC | TT_AP_RO);
+        ttb[i] = TT_ENTRY(i, TT_WRITE_BACK_ALLOC | TT_AP_RO);
     }
 
     // High 64 KB OCM (OCM3): MMU table + .no_cache_ram
-    ptt[0xFFF] = TT_ENTRY(0xFFF, TT_NON_CACHEABLE | TT_AP_RW);
+    ttb[0xFFF] = TT_ENTRY(0xFFF, TT_NON_CACHEABLE | TT_AP_RW);
 }
 
 /*
@@ -254,7 +254,7 @@ static void l2_enable(void) {
  * branch prediction. Caches and the branch predictor were invalidated by
  * Reset_Handler while disabled.
  */
-static void mmu_enable(uint32_t* ptt) {
+static void mmu_enable(uint32_t* ttb) {
     uint32_t v;
 
     // TTBR0 = translation table, DACR: all domains = client.
@@ -262,7 +262,7 @@ static void mmu_enable(uint32_t* ptt) {
     // or before performing cache maintenance) + cache/TLB maintenance
     // broadcast, as the official boot.S does. All CP15 access via CMSIS.
     __DSB();
-    __set_TTBR0((uint32_t)(uintptr_t)ptt);
+    __set_TTBR0((uint32_t)(uintptr_t)ttb);
     __set_DACR(0x55555555u);
 
     __set_ACTLR(__get_ACTLR() | ACTLR_SMP_Msk | (1UL << 0));
@@ -288,7 +288,7 @@ static void mmu_enable(uint32_t* ptt) {
     __ISB();
 }
 
-void zynq_system_init(void) {
+void soc_init(void) {
     mmu_init(mmu_table);
     mmu_enable(mmu_table);
     xip_warm_cache();

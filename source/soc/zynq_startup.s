@@ -35,7 +35,7 @@ reset_handler:
         mcr     p15, 0, r0, c1, c0, 0
 
         // Disable the L2 cache (PL310) while the MMU is still off; it is
-        // re-enabled (prefetch off) by mmu_enable() in zynq_system_init.
+        // re-enabled (prefetch off) by mmu_enable() in soc_init.
         // reg1_control sits at L2C base + 0x100, bit 0 is l2_enable
         // (UG585 appendix A).
         ldr     r0, =0xF8F02100
@@ -116,7 +116,7 @@ Skip:   add     r10, r10, #2                /* Next cache level              */
 Finished:
 
         // MMU: use translation table base register 0. The table itself is
-        // built later in zynq_system_init(), once we are past the point
+        // built later in soc_init(), once we are past the point
         // where variables may be used.
 
         mov     r0, #0
@@ -213,12 +213,7 @@ _start:
 
         /* system_init runs the QSPI/clock reconfiguration from .fast in
            OCM, so the section must be resident before the call. */
-        bl      zynq_system_init
-
-        /* Program the PL from the embedded bitstream (no-op when the build
-           carries none; outcome in g_pl_status) so main() starts with the
-           PL already up. */
-        bl      zynq_devcfg_boot
+        bl      soc_init
 
         ldr     r4, =__preinit_array_start
         ldr     r5, =__preinit_array_end
@@ -273,10 +268,10 @@ dabort_handler:
 
         .weak   irq_handler
         .type   irq_handler, function
-irq_handler:
+irq_handler:                     /* overridden by zynq_irq.c (dispatcher) */
         b       irq_handler
 
         .weak   fiq_handler
         .type   fiq_handler, function
-fiq_handler:                     /* overridden by zynq_fiq.c (dispatcher) */
+fiq_handler:                     /* nothing routes to FIQ; hang if it fires */
         b       fiq_handler

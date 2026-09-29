@@ -7,7 +7,7 @@
 #include "zynq_cmsis.h"
 
 /* The only hard-coded frequency in the system: the crystal feeding PS_CLK. */
-#define ZYNQ_PS_CLK_VALUE (33333000UL) /* 33.333 MHz */
+#define PS_CLK_HZ (33333000UL) /* 33.333 MHz */
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

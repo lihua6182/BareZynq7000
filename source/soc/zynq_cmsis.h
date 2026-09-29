@@ -31,8 +31,8 @@
 #define GIC_INTERFACE_BASE   (0xF8F00100UL)
 #define L2C_310_BASE         (0xF8F02000UL)
 
-/* Interrupt IDs 0..95 (UG585 Table 7-3). zynq_fiq_* keeps taking plain
-   integer IDs; cast to IRQn_Type when calling GIC_* functions. */
+/* Interrupt IDs 0..95 (UG585 Table 7-3). The zynq_irq driver keeps taking
+   plain integer IDs; cast to IRQn_Type when calling GIC_* functions. */
 typedef enum IRQn {
     /* Software generated interrupts */
     SGI0_IRQn = 0,

@@ -1,7 +1,7 @@
-/.vscode
 /.vs
 /.venv
 /build
 /doc
 /toolchain
-/tools
+
+__pycache__

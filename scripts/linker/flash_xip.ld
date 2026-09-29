@@ -22,7 +22,8 @@ SECTIONS
         __boot_header_end__ = .;
     } > FLASH
 
-    /* irq vector table */
+    /* ARM exception vector table (8 entries + literal pool). The IRQ slot
+       is overridden at link time by the dispatcher in zynq_irq.c. */
     .vectors ORIGIN(FLASH) + 0x8C0 :
     {
         . = ALIGN(32);
@@ -138,22 +139,6 @@ SECTIONS
         _edata = .;
     } > RAM AT > FLASH
     _sidata = LOADADDR(.data);
-
-    /* PL image, consumed by zynq_devcfg: the packed blob produced by
-       tools/rle_bitstream.py (magic + lengths + CRC-32 + RLE payload), or a
-       raw PCAP-form bitstream if one is embedded directly. The direct form
-       is DMA'd in place from the QSPI linear window; the packed form streams
-       through a 4 KB OCM staging buffer. The ALIGN sits on the section, not
-       inside it, so no hole is burned between the previous section and the
-       image. */
-    .bitstream : ALIGN(4096)
-    {
-        __bitstream_start__ = .;
-        KEEP(*(.bitstream))
-        . = ALIGN(4);
-        __bitstream_end__ = .;
-    } > FLASH
-    ASSERT((__bitstream_start__ & 0x3F) == 0, "PL bitstream must be 64-byte aligned")
 
     /* Zero-initialized data */
     .bss (NOLOAD) :

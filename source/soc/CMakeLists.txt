@@ -6,9 +6,9 @@ target_sources("soc"
     INTERFACE
     "zynq_boot_header.c"
     "zynq_clock.c"
-    "zynq_delay.c"
+    "zynq_tick.c"
     "zynq_devcfg.c"
-    "zynq_fiq.c"
+    "zynq_irq.c"
     "zynq_startup.s"
     "zynq_system.c"
 )

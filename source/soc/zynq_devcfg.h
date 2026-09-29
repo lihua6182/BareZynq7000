@@ -7,13 +7,13 @@
  * PS-side PL configuration over the Device Configuration Interface (DevC)
  * and its PCAP bridge, following UG585 (v1.14):
  *   ch.6 "Configure the PL via PCAP Bridge Example"  (step numbers quoted in
- *        zynq_devcfg_load refer to that list)
+ *        devcfg_load refer to that list)
  *   ch.2 "PS-PL Voltage Level Shifter Enables"       (power-up sequence)
  *   Appendix A                                       (devcfg register bits)
  *
  * Two image forms are accepted, selected by the first word:
  *
- *   Packed (the build's normal output, tools/rle_bitstream.py): a 16-byte
+ *   Packed (the build's normal output, tools/convert_bitstream.py): a 16-byte
  *   header (magic "ZBSP", raw length, packed length, CRC-32) followed by the
  *   RLE payload in the SEGGER BSP_FPGA.c encoding. The DevC DMA cannot read
  *   compressed data, so the loader decodes through a 4 KB OCM staging buffer
@@ -43,66 +43,49 @@
  * it keeps this boot-time path independent of the GIC and of the timer tick.
  */
 
-typedef enum {
-    ZYNQ_DEVCFG_OK = 0,
-    ZYNQ_DEVCFG_ERR_SRC_ALIGN,    /* bitstream base is not 64-byte aligned  */
-    ZYNQ_DEVCFG_ERR_LENGTH,       /* byte count is not a multiple of 4      */
-    ZYNQ_DEVCFG_ERR_NO_SYNC,      /* no PCAP sync word: wrong byte order?   */
-    ZYNQ_DEVCFG_ERR_HDR,          /* packed header magic/lengths invalid    */
-    ZYNQ_DEVCFG_ERR_STREAM,       /* RLE payload malformed/length mismatch  */
-    ZYNQ_DEVCFG_ERR_CRC,          /* decompressed image failed CRC-32       */
-    ZYNQ_DEVCFG_ERR_PL_NO_POWER,  /* MCTRL[PCFG_POR_B] = 0: PL not powered  */
-    ZYNQ_DEVCFG_ERR_PL_NOT_RESET, /* PCFG_INIT did not clear after PROG_B   */
-    ZYNQ_DEVCFG_ERR_PL_NOT_READY, /* PCFG_INIT never asserted: PL not ready */
-    ZYNQ_DEVCFG_ERR_CMD_Q_FULL,   /* DMA command queue stayed full          */
-    ZYNQ_DEVCFG_ERR_DMA,          /* DMA command / AXI error / FIFO overflow*/
-    ZYNQ_DEVCFG_ERR_DMA_TIMEOUT,  /* DMA_DONE never arrived                 */
-    ZYNQ_DEVCFG_ERR_NO_DONE,      /* DMA done, but PL DONE never asserted   */
-    ZYNQ_DEVCFG_NO_IMAGE,         /* boot(): this build embeds no bitstream */
-} zynq_devcfg_status_t;
+enum devcfg_status {
+    DEVCFG_OK = 0,
+    DEVCFG_ERR_SRC_ALIGN,    /* bitstream base is not 64-byte aligned  */
+    DEVCFG_ERR_LENGTH,       /* byte count is not a multiple of 4      */
+    DEVCFG_ERR_NO_SYNC,      /* no PCAP sync word: wrong byte order?   */
+    DEVCFG_ERR_HDR,          /* packed header magic/lengths invalid    */
+    DEVCFG_ERR_STREAM,       /* RLE payload malformed/length mismatch  */
+    DEVCFG_ERR_CRC,          /* decompressed image failed CRC-32       */
+    DEVCFG_ERR_PL_NO_POWER,  /* MCTRL[PCFG_POR_B] = 0: PL not powered  */
+    DEVCFG_ERR_PL_NOT_RESET, /* PCFG_INIT did not clear after PROG_B   */
+    DEVCFG_ERR_PL_NOT_READY, /* PCFG_INIT never asserted: PL not ready */
+    DEVCFG_ERR_CMD_Q_FULL,   /* DMA command queue stayed full          */
+    DEVCFG_ERR_DMA,          /* DMA command / AXI error / FIFO overflow*/
+    DEVCFG_ERR_DMA_TIMEOUT,  /* DMA_DONE never arrived                 */
+    DEVCFG_ERR_NO_DONE,      /* DMA done, but PL DONE never asserted   */
+    DEVCFG_NO_IMAGE,         /* boot(): this build embeds no bitstream */
+};
 
 /*
  * One-time DevC setup: PS->PL level shifters (ch.2 step 2), the APB unlock
  * word, cleared interrupt status and PCAP selected on the bridge. Safe to
  * call before the bitstream source is known.
  */
-void zynq_devcfg_init(void);
+void devcfg_init(void);
 
 /*
  * Configure the PL from an image resident in the QSPI linear window (the
  * DevC DMA reads it straight from flash: UG585 explicitly lists "linearly
  * addressable flash devices (Quad-SPI or NOR)" as a PCAP DMA source).
- * zynq_devcfg_init() must have been called once before. The image must be
- * 64-byte aligned; 'bytes' counts the image size, i.e. it must be a multiple
+ * devcfg_init() must have been called once before. The image must be
+ * 64-byte aligned; 'len' counts the image size, i.e. it must be a multiple
  * of 4.
  *
  * Byte order: the DevC/PCAP path consumes 32-bit words in little-endian
  * memory order, so the image (packed payload or direct) must be the "byte
  * swapped .bin" form (kernel zynq-fpga.c): the 0xAA995566 sync word appears
  * as the bytes 66 55 99 AA. Vivado's native 'write_bitstream -bin' output is
- * byte-reversed and is rejected here with ZYNQ_DEVCFG_ERR_NO_SYNC; the build
- * embeds the image pre-swapped and pre-packed (see tools/rle_bitstream.py).
+ * byte-reversed and is rejected here with DEVCFG_ERR_NO_SYNC; the build
+ * embeds the image pre-swapped and pre-packed (see tools/convert_bitstream.py).
  *
- * Returns ZYNQ_DEVCFG_OK once the PL asserts DONE and the PL->PS level
+ * Returns DEVCFG_OK once the PL asserts DONE and the PL->PS level
  * shifters are enabled, or the first error encountered.
  */
-zynq_devcfg_status_t zynq_devcfg_load(const void* bitstream, uint32_t bytes);
-
-/*
- * Pre-main PL bring-up, called once from _start right after
- * zynq_system_init() has brought up the MMU, clocks and QSPI linear mode.
- * It runs zynq_devcfg_init() and then programs the PL from the image the
- * build embedded next to the application (SDK_BITSTREAM -> packed blob in
- * the .bitstream section), so main() starts with the PL already up - or
- * with the failure reason recorded in g_pl_status. Requires nothing from
- * the GIC or the timer tick (see the poll-limit note in zynq_devcfg.c).
- */
-void zynq_devcfg_boot(void);
-
-/*
- * Outcome of zynq_devcfg_boot(), kept volatile and non-static so both
- * main() and a debugger can read the latest value directly.
- */
-extern volatile zynq_devcfg_status_t g_pl_status;
+enum devcfg_status devcfg_load(const void* img, uint32_t len);
 
 #endif /* ZYNQ_DEVCFG_H */
