@@ -103,8 +103,8 @@ int gpio_direction_output(uint32_t pin, int value) {
     bit = GPIO_BIT(pin);
 
     gpio_set_value(pin, value);
-    GPIO_REGW(GPIO_W_DIRM(bank)) |= bit;
-    GPIO_REGW(GPIO_W_OEN(bank)) |= bit;
+    *gpio_reg_dirm(bank) |= bit;
+    *gpio_reg_oen(bank) |= bit;
     return 0;
 }
 
@@ -123,8 +123,8 @@ int gpio_direction_input(uint32_t pin) {
     bank = GPIO_BANK(pin);
     bit = GPIO_BIT(pin);
 
-    GPIO_REGW(GPIO_W_DIRM(bank)) &= ~bit;
-    GPIO_REGW(GPIO_W_OEN(bank)) &= ~bit;
+    *gpio_reg_dirm(bank) &= ~bit;
+    *gpio_reg_oen(bank) &= ~bit;
     return 0;
 }
 
@@ -174,12 +174,12 @@ void gpio_set_irq_type(uint32_t pin, uint32_t type) {
             return;
     }
 
-    GPIO_REGW(GPIO_W_INT_TYPE(bank)) =
-        (GPIO_REGW(GPIO_W_INT_TYPE(bank)) & ~bit) | ((edge != 0U) ? bit : 0UL);
-    GPIO_REGW(GPIO_W_INT_POL(bank)) =
-        (GPIO_REGW(GPIO_W_INT_POL(bank)) & ~bit) | ((high != 0U) ? bit : 0UL);
-    GPIO_REGW(GPIO_W_INT_ANY(bank)) =
-        (GPIO_REGW(GPIO_W_INT_ANY(bank)) & ~bit) | ((any != 0U) ? bit : 0UL);
+    *gpio_reg_int_type(bank) =
+        (*gpio_reg_int_type(bank) & ~bit) | ((edge != 0U) ? bit : 0UL);
+    *gpio_reg_int_pol(bank) =
+        (*gpio_reg_int_pol(bank) & ~bit) | ((high != 0U) ? bit : 0UL);
+    *gpio_reg_int_any(bank) =
+        (*gpio_reg_int_any(bank) & ~bit) | ((any != 0U) ? bit : 0UL);
 }
 
 /**

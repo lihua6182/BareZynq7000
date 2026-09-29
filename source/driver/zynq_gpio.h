@@ -670,23 +670,49 @@
 /* Register access                                                    */
 /* ------------------------------------------------------------------ */
 
-/* Word indices from the GPIO base (UG585 Table 14-1): the MASK_DATA and
-   DATA groups are packed, the per-bank group repeats every 0x40. */
-#define GPIO_W_MDATA(bank, half) (((0x000UL + (0x008UL * (bank)) + (0x004UL * (half))) / 4UL))
-#define GPIO_W_DATA(bank)        (((0x040UL + (0x004UL * (bank))) / 4UL))
-#define GPIO_W_DATA_RO(bank)     (((0x060UL + (0x004UL * (bank))) / 4UL))
-#define GPIO_W_DIRM(bank)        (((0x204UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_OEN(bank)         (((0x208UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_MASK(bank)    (((0x20CUL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_EN(bank)      (((0x210UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_DIS(bank)     (((0x214UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_STAT(bank)    (((0x218UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_TYPE(bank)    (((0x21CUL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_POL(bank)     (((0x220UL + (0x040UL * (bank))) / 4UL))
-#define GPIO_W_INT_ANY(bank)     (((0x224UL + (0x040UL * (bank))) / 4UL))
+/*
+ * One accessor per register group (UG585 Table 14-1), each returning
+ * the register as a pointer for read, write or read-modify-write. The
+ * MASK_DATA and DATA groups are packed (16 pins per word), the
+ * per-bank group repeats every 0x40. Only one GPIO controller exists,
+ * so the base is fixed here.
+ */
 
-/* Only one GPIO controller exists, so the base is fixed here. */
-#define GPIO_REGW(idx) (((volatile uint32_t*)(uintptr_t)GPIO)[(idx)])
+/* Register at a byte offset from the GPIO base. */
+static inline volatile uint32_t* gpio_reg_at(uint32_t byte_off) {
+    return &((volatile uint32_t*)(uintptr_t)GPIO)[byte_off / 4UL];
+}
+
+/* Per-bank register: byte_off is the bank-0 offset of the group. */
+static inline volatile uint32_t* gpio_reg_bank(uint32_t byte_off, uint32_t bank) {
+    return gpio_reg_at(byte_off + (0x040UL * bank));
+}
+
+/* MASK_DATA_x_yL: the only output write path (upper 16 bits mask the
+   pins to leave untouched); half selects the low/high 16 pins. */
+static inline volatile uint32_t* gpio_reg_mdata(uint32_t bank, uint32_t half) {
+    return gpio_reg_at((0x008UL * bank) + (0x004UL * half));
+}
+
+/* DATA_x: output latch. */
+static inline volatile uint32_t* gpio_reg_data(uint32_t bank) {
+    return gpio_reg_at(0x040UL + (0x004UL * bank));
+}
+
+/* DATA_x_RO: pad level. */
+static inline volatile uint32_t* gpio_reg_data_ro(uint32_t bank) {
+    return gpio_reg_at(0x060UL + (0x004UL * bank));
+}
+
+static inline volatile uint32_t* gpio_reg_dirm(uint32_t bank) { return gpio_reg_bank(0x204UL, bank); }
+static inline volatile uint32_t* gpio_reg_oen(uint32_t bank) { return gpio_reg_bank(0x208UL, bank); }
+static inline volatile uint32_t* gpio_reg_int_mask(uint32_t bank) { return gpio_reg_bank(0x20CUL, bank); }
+static inline volatile uint32_t* gpio_reg_int_en(uint32_t bank) { return gpio_reg_bank(0x210UL, bank); }
+static inline volatile uint32_t* gpio_reg_int_dis(uint32_t bank) { return gpio_reg_bank(0x214UL, bank); }
+static inline volatile uint32_t* gpio_reg_int_stat(uint32_t bank) { return gpio_reg_bank(0x218UL, bank); }
+static inline volatile uint32_t* gpio_reg_int_type(uint32_t bank) { return gpio_reg_bank(0x21CUL, bank); }
+static inline volatile uint32_t* gpio_reg_int_pol(uint32_t bank) { return gpio_reg_bank(0x220UL, bank); }
+static inline volatile uint32_t* gpio_reg_int_any(uint32_t bank) { return gpio_reg_bank(0x224UL, bank); }
 
 /* Bank 0..3 = pin / 32, masked so a wild pin number lands on the wrong
    GPIO register instead of escaping the block. */
@@ -726,22 +752,22 @@ int gpio_direction_input(uint32_t pin);
 
 /* Is the pin configured as an output (DIRM read back)? */
 static inline int gpio_is_output(uint32_t pin) {
-    return ((GPIO_REGW(GPIO_W_DIRM(GPIO_BANK(pin))) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
+    return ((*gpio_reg_dirm(GPIO_BANK(pin)) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Is the output driver on (OEN)? */
 static inline int gpio_is_driven(uint32_t pin) {
-    return ((GPIO_REGW(GPIO_W_OEN(GPIO_BANK(pin))) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
+    return ((*gpio_reg_oen(GPIO_BANK(pin)) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Switch the output driver on, leaving the direction untouched. */
 static inline void gpio_enable_driver(uint32_t pin) {
-    GPIO_REGW(GPIO_W_OEN(GPIO_BANK(pin))) |= GPIO_BIT(pin);
+    *gpio_reg_oen(GPIO_BANK(pin)) |= GPIO_BIT(pin);
 }
 
 /* Switch the output driver off (tri-state). */
 static inline void gpio_disable_driver(uint32_t pin) {
-    GPIO_REGW(GPIO_W_OEN(GPIO_BANK(pin))) &= ~GPIO_BIT(pin);
+    *gpio_reg_oen(GPIO_BANK(pin)) &= ~GPIO_BIT(pin);
 }
 
 /* ------------------------------------------------------------------ */
@@ -754,7 +780,7 @@ static inline void gpio_disable_driver(uint32_t pin) {
 static inline void gpio_set_value(uint32_t pin, int value) {
     uint32_t bit = GPIO_MDATA_BIT(pin);
 
-    GPIO_REGW(GPIO_W_MDATA(GPIO_BANK(pin), GPIO_MDATA_HALF(pin))) =
+    *gpio_reg_mdata(GPIO_BANK(pin), GPIO_MDATA_HALF(pin)) =
         ((0xFFFFUL ^ bit) << 16) | ((value != 0) ? bit : 0UL);
 }
 
@@ -762,7 +788,7 @@ static inline void gpio_set_value(uint32_t pin, int value) {
 static inline void gpio_set_high(uint32_t pin) {
     uint32_t bit = GPIO_MDATA_BIT(pin);
 
-    GPIO_REGW(GPIO_W_MDATA(GPIO_BANK(pin), GPIO_MDATA_HALF(pin))) =
+    *gpio_reg_mdata(GPIO_BANK(pin), GPIO_MDATA_HALF(pin)) =
         ((0xFFFFUL ^ bit) << 16) | bit;
 }
 
@@ -770,7 +796,7 @@ static inline void gpio_set_high(uint32_t pin) {
 static inline void gpio_set_low(uint32_t pin) {
     uint32_t bit = GPIO_MDATA_BIT(pin);
 
-    GPIO_REGW(GPIO_W_MDATA(GPIO_BANK(pin), GPIO_MDATA_HALF(pin))) =
+    *gpio_reg_mdata(GPIO_BANK(pin), GPIO_MDATA_HALF(pin)) =
         ((0xFFFFUL ^ bit) << 16);
 }
 
@@ -778,15 +804,15 @@ static inline void gpio_set_low(uint32_t pin) {
 static inline void gpio_toggle(uint32_t pin) {
     uint32_t bank = GPIO_BANK(pin);
     uint32_t bit = GPIO_MDATA_BIT(pin);
-    uint32_t cur = (GPIO_REGW(GPIO_W_DATA(bank)) >> (pin & 0x1FUL)) & 1UL;
+    uint32_t cur = (*gpio_reg_data(bank) >> (pin & 0x1FUL)) & 1UL;
 
-    GPIO_REGW(GPIO_W_MDATA(bank, GPIO_MDATA_HALF(pin))) =
+    *gpio_reg_mdata(bank, GPIO_MDATA_HALF(pin)) =
         ((0xFFFFUL ^ bit) << 16) | ((cur != 0U) ? 0UL : bit);
 }
 
 /* Output latch state (DATA_x), 0 or 1 - what was written, not the pad. */
 static inline int gpio_get_output(uint32_t pin) {
-    return ((GPIO_REGW(GPIO_W_DATA(GPIO_BANK(pin))) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
+    return ((*gpio_reg_data(GPIO_BANK(pin)) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -796,7 +822,7 @@ static inline int gpio_get_output(uint32_t pin) {
 /* Pad level (DATA_x_RO), 0 or 1. Reads the real pin state, so it works
    for inputs and for outputs driven by something else. */
 static inline int gpio_get_value(uint32_t pin) {
-    return (int)((GPIO_REGW(GPIO_W_DATA_RO(GPIO_BANK(pin))) >> (pin & 0x1FUL)) & 1UL);
+    return (int)((*gpio_reg_data_ro(GPIO_BANK(pin)) >> (pin & 0x1FUL)) & 1UL);
 }
 
 /* ------------------------------------------------------------------ */
@@ -805,29 +831,29 @@ static inline int gpio_get_value(uint32_t pin) {
 
 /* Unmask the pin's interrupt. */
 static inline void gpio_enable_irq(uint32_t pin) {
-    GPIO_REGW(GPIO_W_INT_EN(GPIO_BANK(pin))) = GPIO_BIT(pin);
+    *gpio_reg_int_en(GPIO_BANK(pin)) = GPIO_BIT(pin);
 }
 
 /* Mask the pin's interrupt. */
 static inline void gpio_disable_irq(uint32_t pin) {
-    GPIO_REGW(GPIO_W_INT_DIS(GPIO_BANK(pin))) = GPIO_BIT(pin);
+    *gpio_reg_int_dis(GPIO_BANK(pin)) = GPIO_BIT(pin);
 }
 
 /* Is the pin's interrupt unmasked (INT_MASK, the read-only view)? */
 static inline int gpio_irq_enabled(uint32_t pin) {
-    return ((GPIO_REGW(GPIO_W_INT_MASK(GPIO_BANK(pin))) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
+    return ((*gpio_reg_int_mask(GPIO_BANK(pin)) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Is the pin's interrupt pending? INT_STAT only reports unmasked
    sources, so this is "pending and would fire". */
 static inline int gpio_irq_pending(uint32_t pin) {
-    return ((GPIO_REGW(GPIO_W_INT_STAT(GPIO_BANK(pin))) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
+    return ((*gpio_reg_int_stat(GPIO_BANK(pin)) & GPIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* INT_STAT is write-1-to-clear: write the pin's bit to drop it. Must
    be done before returning from the handler, or the IRQ re-fires. */
 static inline void gpio_clear_irq(uint32_t pin) {
-    GPIO_REGW(GPIO_W_INT_STAT(GPIO_BANK(pin))) = GPIO_BIT(pin);
+    *gpio_reg_int_stat(GPIO_BANK(pin)) = GPIO_BIT(pin);
 }
 
 /*
