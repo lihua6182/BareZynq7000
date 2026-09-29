@@ -153,7 +153,7 @@ SECTIONS
     } > RAM
 
     __heap_start__      = ALIGN(_ebss, 8);
-    __heap_end__        = __heap_start__ + 0x400;      /* 1 KiB */
+    __heap_end__        = __heap_start__ + 0x1000;     /* 4 KiB: newlib stdio buffers */
     
     __stack_abt_start__ = ALIGN(__heap_end__, 8);
     __stack_abt_end__   = __stack_abt_start__ + 0x100; /* 256 B */
