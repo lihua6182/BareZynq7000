@@ -37,8 +37,8 @@
   NumExitSteps = 0
   UseScriptFile = 0
   ScriptFile = ""
-  RAMAddr = 0x00000020
-  RAMSize = 0x00020000
+  RAMAddr = 0x00020000
+  RAMSize = 0x00010000
   CheckCoreID = 0
   CoreID = 0x00000000
   CoreIDMask = 0x0F000FFF
