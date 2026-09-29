@@ -1,20 +1,22 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-#include "zynq_tick.h"
-#include "zynq_devcfg.h"
+#include "board_fpga.h"
+#include "zynq_gpio.h"
 #include "zynq_irq.h"
 #include "zynq_soc_ip.h"
+#include "zynq_tick.h"
+#include "zynq_uart.h"
 
-#define LED_MIO  (24u)              /* MIO pin number of the LED              */
-#define LED_BIT  (1UL << LED_MIO)   /* LED bit within GPIO bank 0 (MIO 0..31) */
+#define LED_MIO (24u) /* MIO pin number of the LED */
 
 /*
  * Board-stage bring-up, called at the top of main() once the soc stage has
- * run (soc_init: MMU, clocks, QSPI linear mode). Programs the PL from the
- * packed bitstream generated in this folder (bitstream.bin ->
- * board_fpga.c via the VSCode task "Convert PL bitstream"), so the rest
- * of main() runs with the PL up. Poll-based; needs no GIC or timer tick.
+ * run (soc_init: MMU, clocks, QSPI linear mode). Configures the PL from
+ * the packed image in board_fpga_bitstream.c (generated from bitstream.bin
+ * by the VSCode task "Convert PL bitstream"), starts its clock and
+ * releases its resets, so the rest of main() runs with the PL up.
+ * Poll-based; needs no GIC or timer tick.
  */
 void board_init(void);
 
