@@ -1,10 +1,17 @@
+/**
+ * @file zynq_clock.c
+ * @brief SLCR clock tree readback and PL fabric clock setup (UG585 ch.25).
+ */
+
 #include "zynq_clock.h"
 
-/*
- * PLL output = PS_CLK x FDIV, or PS_CLK straight through while the bypass
- * multiplexer is forced (UG585 ch. 25; FDIV = PLL_CTRL[18:12],
- * PLL_BYPASS_FORCE = PLL_CTRL[4]). 64-bit intermediate: a large crystal x
- * the maximum FDIV can exceed 2^31.
+/**
+ * @brief  Compute a PLL output frequency from its control register.
+ * @param  pll_ctrl Value of ARM/DDR/IO_PLL_CTRL.
+ * @return PS_CLK x FDIV, or PS_CLK while bypass is forced.
+ *
+ * UG585 ch. 25; FDIV = PLL_CTRL[18:12], bypass = PLL_CTRL[4]. The
+ * 64-bit intermediate keeps a large crystal x max FDIV within range.
  */
 static uint32_t pll_freq(uint32_t pll_ctrl) {
     uint32_t fdiv = (pll_ctrl >> 12) & 0x7FU;
@@ -15,7 +22,12 @@ static uint32_t pll_freq(uint32_t pll_ctrl) {
     return (uint32_t)((uint64_t)PS_CLK_HZ * (uint64_t)fdiv);
 }
 
-/* Peripheral clock mux: SRCSEL[5:4] = 0x:IO, 10:ARM, 11:DDR. */
+/**
+ * @brief  Resolve a peripheral clock mux setting.
+ * @param  srcsel SRCSEL[5:4]: 0x = IO PLL, 2 = ARM PLL, 3 = DDR PLL.
+ * @param  f      Frequencies already resolved for the three PLLs.
+ * @return The selected source frequency.
+ */
 static uint32_t periph_src(uint32_t srcsel, const struct clk_freqs* f) {
     switch (srcsel) {
         case 2U:
@@ -27,7 +39,12 @@ static uint32_t periph_src(uint32_t srcsel, const struct clk_freqs* f) {
     }
 }
 
-/* CPU clock mux: SRCSEL[5:4] = 0x:ARM, 10:DDR, 11:IO. */
+/**
+ * @brief  Resolve the CPU clock mux setting.
+ * @param  srcsel SRCSEL[5:4]: 0x = ARM PLL, 2 = DDR PLL, 3 = IO PLL.
+ * @param  f      Frequencies already resolved for the three PLLs.
+ * @return The selected source frequency.
+ */
 static uint32_t cpu_src(uint32_t srcsel, const struct clk_freqs* f) {
     switch (srcsel) {
         case 2U:
@@ -39,28 +56,52 @@ static uint32_t cpu_src(uint32_t srcsel, const struct clk_freqs* f) {
     }
 }
 
-/* One-based 6-bit divisor field; 0 bypasses the division. */
+/**
+ * @brief  Decode a one-based 6-bit divisor field.
+ * @param  ctrl  Clock control register value.
+ * @param  shift Bit position of the divisor field.
+ * @return The divisor, or 1 when the field is 0 (division bypassed).
+ */
 static uint32_t div_field(uint32_t ctrl, uint32_t shift) {
     uint32_t div = (ctrl >> shift) & 0x3FU;
 
     return (div != 0U) ? div : 1U;
 }
 
-/* Single-divider peripheral: freq = mux / DIVISOR[13:8]. */
+/**
+ * @brief  Frequency of a single-divider peripheral clock.
+ * @param  ctrl Clock control register value: mux / DIVISOR[13:8].
+ * @param  f    Frequencies already resolved for the three PLLs.
+ * @return The resulting frequency.
+ */
 static uint32_t periph_freq(uint32_t ctrl, const struct clk_freqs* f) {
     uint32_t src = periph_src((ctrl >> 4) & 0x3U, f);
 
     return src / div_field(ctrl, 8U);
 }
 
-/* Cascaded two-divider peripheral (GEM, CAN, FCLK): mux / DIV0[13:8] /
-   DIV1[25:20]. */
+/**
+ * @brief  Frequency of a cascaded two-divider peripheral clock.
+ * @param  ctrl Clock control register value: mux / DIV0[13:8] / DIV1[25:20].
+ * @param  f    Frequencies already resolved for the three PLLs.
+ * @return The resulting frequency.
+ *
+ * GEM, CAN and the FCLKs use this shape.
+ */
 static uint32_t periph2_freq(uint32_t ctrl, const struct clk_freqs* f) {
     uint32_t src = periph_src((ctrl >> 4) & 0x3U, f);
 
     return src / div_field(ctrl, 8U) / div_field(ctrl, 20U);
 }
 
+/**
+ * @brief  Read the whole clock tree out of the SLCR.
+ * @param  freqs Out: every frequency in struct clk_freqs.
+ *
+ * Derived from the live register values, so it stays correct after
+ * sys_clock_init() reprogrammed the PLLs. DDR is reported even though
+ * this board has no DDR controller.
+ */
 void clk_freqs_get(struct clk_freqs* freqs) {
     struct clk_freqs f;
     uint32_t ctrl;
@@ -109,10 +150,13 @@ void clk_freqs_get(struct clk_freqs* freqs) {
     *freqs = f;
 }
 
-/*
- * PL output clocks (FCLK0-3): SLCR FPGA0-3_CLK_CTRL at 0x170 + 0x10 * n.
- * The register group per route is {CLK_CTRL, THR_CTRL, THR_CNT, THR_STA},
- * so the four CLK_CTRLs are not contiguous in the struct.
+/**
+ * @brief  Get the SLCR clock control register of a PL fabric clock.
+ * @param  fclk FCLK index, 0..3.
+ * @return Pointer to SLCR.FPGAn_CLK_CTRL.
+ *
+ * The register group per route is {CLK_CTRL, THR_CTRL, THR_CNT,
+ * THR_STA}, so the four CLK_CTRLs are not contiguous in the struct.
  */
 static volatile uint32_t* fclk_ctrl_reg(uint32_t fclk) {
     switch (fclk) {
@@ -127,6 +171,17 @@ static volatile uint32_t* fclk_ctrl_reg(uint32_t fclk) {
     }
 }
 
+/**
+ * @brief  Configure a PL fabric clock and gate it on or off.
+ * @param  fclk   FCLK0..FCLK3.
+ * @param  src    Clock source: FCLK_SRC_IO, _ARM or _DDR.
+ * @param  div0   First divisor, 1..63.
+ * @param  div1   Second divisor, 1..63.
+ * @param  enable true to gate the clock on, false to gate it off.
+ * @return true on success, false on any out-of-range argument.
+ *
+ * Resulting frequency = src / div0 / div1.
+ */
 bool fclk_config(enum fclk fclk, enum fclk_src src,
                  uint32_t div0, uint32_t div1, bool enable) {
     volatile uint32_t* clk_ctrl;
@@ -155,6 +210,11 @@ bool fclk_config(enum fclk fclk, enum fclk_src src,
     return true;
 }
 
+/**
+ * @brief  Gate a PL fabric clock on or off, keeping its configuration.
+ * @param  fclk   FCLK0..FCLK3.
+ * @param  enable true to gate the clock on, false to gate it off.
+ */
 void fclk_enable(enum fclk fclk, bool enable) {
     volatile uint32_t* clk_ctrl;
     uint32_t v;
@@ -173,6 +233,12 @@ void fclk_enable(enum fclk fclk, bool enable) {
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
+/**
+ * @brief  Read back the frequency of a PL fabric clock.
+ * @param  fclk FCLK0..FCLK3.
+ * @return The configured frequency in Hz, or 0 when the route is gated
+ *         off (the PL then sees no clock at all).
+ */
 uint32_t fclk_freq_get(enum fclk fclk) {
     volatile uint32_t* clk_ctrl;
     struct clk_freqs freqs;

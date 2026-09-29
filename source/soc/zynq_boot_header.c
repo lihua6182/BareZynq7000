@@ -1,3 +1,12 @@
+/**
+ * @file zynq_boot_header.c
+ * @brief BootROM boot header, placed at the start of the QSPI image.
+ *
+ * UG585 ch.6. The header is what lets the BootROM execute this image in
+ * place: fsbl_image_length = 0 means "do not copy, run from flash", and
+ * fsbl_exe_address_ram is the XIP entry point.
+ */
+
 #include <stdint.h>
 
 #include "zynq_soc_ip.h"
@@ -7,6 +16,7 @@ struct reg_pair {
     uint32_t val;
 };
 
+/* BootROM boot header (UG585 ch.6), placed at the start of the QSPI image. */
 struct boot_header {
     uint32_t arm_vector_table[8];            // 0x00 Arm Vector Table (0xEAFFFFFE, infinite loop)
     uint32_t width_detection_word;           // 0x20 Width Detection word (0xAA995566)
@@ -24,7 +34,7 @@ struct boot_header {
     uint32_t image_header_table_offset;      // 0x98 Image Header Table Offset
     uint32_t partition_header_table_offset;  // 0x9C Partition Header Table Offset
     struct reg_pair reg_init[256];           // 0xA0 Register Initialization Pairs
-    uint32_t fsbl_user_defined[8];           // 0x8A0 FSBL/User Defined (32 bytes), not read by the BootROM; keeps sizeof() == 0x8C0
+    uint32_t fsbl_user_defined[8];           // 0x8A0 unused by BootROM; keeps sizeof() == 0x8C0
 };
 
 #if defined(__GNUC__)
@@ -37,23 +47,19 @@ const struct boot_header boot_header = {
     .arm_vector_table = {0xEAFFFFFE, 0xEAFFFFFE,
                          0xEAFFFFFE, 0xEAFFFFFE,
                          0xEAFFFFFE, 0xEAFFFFFE,
-                         0xEAFFFFFE, 0xEAFFFFFE}, /* Fill with self loop */
-    .width_detection_word = 0xAA995566,           /* Key value needed by BootROM for QSPI boot */
-    .header_signature = 0x584C4E58,               /* 'XLNX' (byte order 'X','N','L','X'). */
-    .key_source = 0xFFFFFFFF,                     /* Not 0xA5C3C5A3 or 0x3A5C3C5A: non-encrypted FSBL/User code (no key) */
-    .header_version = 0x01010000,                 /* Header Version */
-    .source_offset = 0x000008C0,                  /* Offset into QSPI of the image copied on boot. Must be 64-byte aligned and >= 0x8C0 */
-    .fsbl_image_length = 0x00000000,              /* Bytes to copy to OCM on boot. <= 192 KB; 0 selects execute-in-place instead */
-    .fsbl_load_address_ram = 0x00000000,          /* Destination RAM address the image is copied to */
-    .fsbl_exe_address_ram = LQSPI_BASE + 0x8C0U,  /* Start of Execution (UG585 0x3C): for XIP an absolute address inside the QSPI */
-                                                  /* linear window, 64-byte aligned. Points at the .vectors section (0xFC0008C0), */
-                                                  /* whose first instruction (ldr pc, =reset_handler) enters the startup code. */
-    .total_length = 0x00000000,                   /* Non-secure boot: must equal fsbl_image_length; 0 together with the image */
-                                                  /* length selects execute-in-place */
-    .qspi_configuration_word = 0x00000001,        /* Hard coded to 0x00000001 */
-    .boot_header_checksum = 0x00194AC1,           /* ~sum(words 0x20..0x44), one's complement (UG585: "inverting the result"; a plain */
-                                                  /* negation is off by one and the BootROM rejects the header). Checked at build */
-                                                  /* time by function_validate_boot_header (cmake). */
-    .reg_init[0].addr = 0xFFFFFFFF,               /* 0xFFFFFFFF terminates the list: unused pairs must be addr=0xFFFFFFFF, value=0x0 */
+                         0xEAFFFFFE, 0xEAFFFFFE},
+    .width_detection_word = 0xAA995566,           /* BootROM QSPI-boot key value */
+    .header_signature = 0x584C4E58,               /* 'XLNX' */
+    .key_source = 0xFFFFFFFF,                     /* no key: unencrypted FSBL/User code */
+    .header_version = 0x01010000,
+    .source_offset = 0x000008C0,                  /* image offset; 64B aligned, >= 0x8C0 */
+    .fsbl_image_length = 0x00000000,              /* 0: execute-in-place instead of copy */
+    .fsbl_load_address_ram = 0x00000000,
+    .fsbl_exe_address_ram = LQSPI_BASE + 0x8C0U,  /* XIP entry: .vectors at 0xFC0008C0 */
+    .total_length = 0x00000000,                   /* non-secure: = fsbl_image_length, 0 = XIP */
+    .qspi_configuration_word = 0x00000001,        /* fixed 0x00000001 */
+    .boot_header_checksum = 0x00194AC1,           /* ~sum(words 0x20..0x44), one's complement;
+                                                     build-checked by function_validate_boot_header */
+    .reg_init[0].addr = 0xFFFFFFFF,               /* terminator: unused pairs are addr = 0xFFFFFFFF */
     .reg_init[0].val = 0x00000000,
 };

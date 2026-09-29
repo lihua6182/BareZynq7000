@@ -4,24 +4,19 @@
 #include "zynq_soc_ip.h"
 
 /*
- * Run-time frequency readout of the PS clock tree (UG585 ch. 25). The only
- * hard-coded value is the crystal (PS_CLK_HZ in zynq_common.h); every
- * frequency below is recomputed from the live SLCR registers:
+ * Run-time readout of the PS clock tree (UG585 ch. 25): everything is
+ * recomputed from the live SLCR registers, the only hard-coded value
+ * is the crystal PS_CLK_HZ (zynq_common.h). Divisors are one-based,
+ * 0 bypasses (÷1). Frequencies in Hz.
  *
  *   PLL x = PS_CLK x FDIV (PLL_CTRL[18:12]), or PS_CLK when bypassed
- *   CPU   = cpu mux / DIVISOR (ARM_CLK_CTRL), cpu mux = 0x:ARM 10:DDR 11:IO
- *   CPU_6x4x = CPU              CPU_3x2x = CPU/2
- *   CPU_2x   = CPU/3 or CPU/2 } CLK_621_TRUE[0]: 1 = 6:2:1, 0 = 4:2:1
- *   CPU_1x   = CPU/6 or CPU/4 }
- *   DDR_2x/3x = DDR PLL / divisor (DDR_CLK_CTRL[31:26] / [25:20])
+ *   CPU   = mux / DIVISOR (ARM_CLK_CTRL);       mux: 0x ARM, 10 DDR, 11 IO
  *   periph ref = mux / DIVISOR[13:8] (/ DIV1[25:20] if cascaded),
- *                mux = 0x:IO, 10:ARM, 11:DDR
+ *                                             mux: 0x IO, 10 ARM, 11 DDR
+ *   CPU_6x4x = CPU, CPU_3x2x = CPU/2; CPU_2x/1x per CLK_621_TRUE[0]
  *
- * All divisors are one-based; a 0 field bypasses the division (÷1).
- *
- * Not decoded (external/undeterminable sources): the CAN MIO clock
- * (CAN_MIOCLK_CTRL), the debug trace EMIO clock (DBG_CLK_CTRL[6]) and the
- * watchdog source (SWDT_CLK_SEL). Frequencies are in Hz.
+ * Not decoded (external/undeterminable): CAN MIO clock, debug trace
+ * EMIO clock (DBG_CLK_CTRL[6]), watchdog source (SWDT_CLK_SEL).
  */
 struct clk_freqs {
     uint32_t ps_clk;    /* PS_CLK crystal input                        */
@@ -54,14 +49,11 @@ struct clk_freqs {
 void clk_freqs_get(struct clk_freqs* freqs);
 
 /*
- * PL output clocks (FCLK0-3, SLCR FPGA0-3_CLK_CTRL). FCLK = PLL_src /
- * (div0 * div1); both divisors are one-based 6-bit fields (1..63), pass 1
- * in div1 when no cascade is needed. The source multiplexer is not
- * glitch-free (UG585 ch. 25), so fclk_config gates the clock
- * (CLKACT = 0) around the register update - expect the FCLK line to stop
- * briefly - while the divisors themselves are glitch-free and may be
- * changed live. The throttle registers (FPGAx_THR_*) stay at reset
- * (continuous clock).
+ * PL output clocks FCLK0-3 (SLCR FPGA0-3_CLK_CTRL): FCLK = PLL_src /
+ * (div0 * div1), divisors 1..63, pass 1 in div1 for no cascade. The
+ * source mux is not glitch-free (UG585 ch. 25), so fclk_config gates
+ * the clock around the update; the divisors are glitch-free and may be
+ * changed live.
  */
 enum fclk {
     FCLK0 = 0,
@@ -76,16 +68,16 @@ enum fclk_src {
     FCLK_SRC_DDR = 0x3
 };
 
-/* Program source, both divisors and the enable of one FCLK route. Returns
-   false (without touching the hardware) for an out-of-range argument. */
+/* Program source, divisors and enable of one FCLK route; returns false
+   without touching the hardware on an out-of-range argument. */
 bool fclk_config(enum fclk fclk, enum fclk_src src,
                  uint32_t div0, uint32_t div1, bool enable);
 
-/* Gate one FCLK route on/off; the divisors and source are preserved. */
+/* Gate one FCLK route on/off; divisors and source are preserved. */
 void fclk_enable(enum fclk fclk, bool enable);
 
-/* Frequency the PL actually sees on one FCLK route: 0 when the route is
-   gated off, otherwise PLL_src / (div0 * div1) read back from the SLCR. */
+/* Frequency the PL sees on one FCLK route: 0 when gated off, else
+   PLL_src / (div0 * div1) read back from the SLCR. */
 uint32_t fclk_freq_get(enum fclk fclk);
 
 #endif

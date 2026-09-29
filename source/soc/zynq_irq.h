@@ -3,35 +3,29 @@
 
 #include "zynq_soc_ip.h"
 
-/* Handler slot type: void f(void), STM32 IRQ-handler style. */
+/* Handler slot type: void f(void). */
 typedef void (*irq_handler_t)(void);
 
 /*
- * Shared IRQ dispatch (STM32 vector-table style, adapted to the GIC).
+ * Shared interrupt dispatch, delivered on the IRQ input: the entry in
+ * zynq_startup.s acknowledges the GIC, calls the handler bound to that
+ * ID, then signals EOI. All sources are Group 0 and ICCICR.FIQEn is
+ * clear, so they arrive as ordinary IRQs (UG585 Table 7-1); the FIQ
+ * input stays masked at its reset value. Bind a source before enabling
+ * it:
  *
- * The exception vectors stay in XIP flash; the dispatch table the IRQ
- * entry uses - one handler pointer per GIC interrupt ID - is a plain RAM
- * array in zynq_irq.c. The IRQ entry acknowledges the GIC, calls the
- * handler bound to the acknowledged interrupt ID, then signals
- * end-of-interrupt. Handlers are bound at run time, before the source
- * is enabled:
+ *   irq_attach(Ttc0Timer0_IRQn, my_tick);
+ *   irq_enable(Ttc0Timer0_IRQn);
  *
- *   static void my_tick(void) { ... }
- *   irq_attach(PrivTimer_IRQn, my_tick);   // CPU private timer
- *   irq_enable(PrivTimer_IRQn);
+ * Call irq_init() once at boot. Notable IDs (UG585 Tables 7-3/7-4):
+ * 27 global timer, 29 private timer, 30 private watchdog, 42 TTC0
+ * counter 1, 51 QSPI, 52 GPIO, 54 GEM0, 59 UART0.
  *
- * All sources are delivered as ordinary IRQs: the CPU interface is left
- * with FIQEn clear and irq_enable() routes each source to Group 1.
- * Call irq_init() once at boot, then attach+enable sources.
- * Notable IDs (UG585 Table 7-3): 27 global timer, 29 CPU private timer,
- * 30 CPU private watchdog, 51 QSPI, 52 GPIO, 54 GEM0, 82 UART0.
- *
- * The dispatcher is XIP code: IRQ is unmasked only after the boot-time
- * QSPI reconfiguration, so flash is always readable on an IRQ. Code that
- * leaves QSPI linear mode at run time must first mask IRQ
- * (__disable_irq) or its instruction fetches will stall. An enabled but
- * unattached source is dismissed with EOI only and re-pends while its
- * peripheral stays asserted.
+ * The dispatcher is XIP code, so IRQ stays masked until the boot-time
+ * QSPI reconfiguration is done; code that leaves linear mode at run
+ * time must mask IRQ first (__disable_irq) or its fetches stall. An
+ * enabled but unattached source is dismissed with EOI only and
+ * re-pends while its peripheral stays asserted.
  */
 
 /* Interrupt IDs implemented by the Zynq GIC: 16 SGI + 16 PPI + 64 SPI */

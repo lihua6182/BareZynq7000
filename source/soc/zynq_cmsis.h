@@ -2,15 +2,11 @@
 #define ZYNQ_CMSIS_H
 
 /*
- * Device adaptation header for the vendored CMSIS-Core(A) headers in
- * source/cmsis (ARM.CMSIS 6.3.0, tag). It provides everything core_ca.h
- * expects from the device: the core/CPU configuration defines, the GIC and
- * L2C-310 base addresses and the interrupt ID enum (UG585 Table 7-3,
- * 16 SGI + 16 PPI + 64 SPI). Including it brings in the GIC_xxx, L2C_xxx
- * and L1C_xxx function families plus the GICDistributor, GICInterface and
- * L2C_310 register sets, replacing the hand-written GICD/GICC/L2C
- * definitions that used to live in zynq_soc_ip.h (single definition of
- * each peripheral).
+ * Device adaptation for the vendored CMSIS-Core(A) headers in
+ * source/soc/cmsis (ARM.CMSIS 6.3.0): core/CPU config defines, the GIC
+ * and L2C-310 base addresses, and the interrupt ID enum (UG585 Table
+ * 7-3: 16 SGI + 16 PPI + 64 SPI). Including it brings in the
+ * GIC_, L2C_ and L1C_ function families and their register sets.
  */
 
 #include <stdint.h>
@@ -21,9 +17,8 @@
 #define __GIC_PRESENT (1U)
 #define __TIM_PRESENT (0U) /* Zynq-7000 has no architected generic timer */
 
-/* PL310 present: zynq_system.c l2_enable() configures it via the CMSIS
-   register set; the tag/DATA RAM latency registers (0x108/0x10C) are not
-   members of the CMSIS L2C_310_TypeDef and are written by offset. */
+/* PL310 present; tag/DATA RAM latency regs (0x108/0x10C) are not in the
+   CMSIS struct and are written by offset (zynq_system.c). */
 #define __L2C_PRESENT (1U)
 
 /* Private peripheral block (UG585 Table 4-2, PS address view). */
