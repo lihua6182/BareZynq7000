@@ -1,29 +1,40 @@
+/**
+ * @file main.c
+ * @brief Application entry: board, tick, console and a heartbeat LED.
+ */
+
 #include "board.h"
 
+/**
+ * @brief  Application entry point.
+ * @return Does not return.
+ */
 int main(void) {
     board_init();
 
     irq_init();
     tick_init();
 
-    // Route MIO 24 to the GPIO controller and make it an output.
+    mio_set_function(LED_MIO, GPIO_MIO24_GPIO);
+    mio_set_function(11, GPIO_MIO11_UART0);
+    mio_set_function(10, GPIO_MIO10_UART0);
+    mio_enable_pull_up(11);
+    mio_enable_pull_up(10);
 
-    // All MIO mux selects at 0 select the GPIO function; the remaining
-    // fields configure the IO buffer only. SLCR writes must be wrapped
-    // in unlock/lock.
-    SLCR->UNLOCK = SLCR_UNLOCK_KEY;
-    SLCR->MIO_PIN_24 = MIO_PIN_OPT_IO_CMOS_3V3;  // GPIO function, LVCMOS 3.3V, slew slow, receiver on
-    SLCR->LOCK = SLCR_LOCK_KEY;
+    gpio_enable_clock();
+    gpio_direction_output(LED_MIO, 0);
 
-    // GPIO bank 0 covers MIO 0..31: set direction and enable the output
-    // driver for MIO 24.
-    GPIO->DIRM_0 |= LED_BIT;  // output
-    GPIO->OEN_0 |= LED_BIT;   // output enable
+    uart_init(UART0, 115200);
 
-    // Blink: slow when the PL came up, fast when it did not (read
-    // pl_status for the reason; a debugger can halt here and inspect it).
+    uart_puts(UART0, "pl_status=");
+    uart_putdec(UART0, (uint32_t)pl_status);
+    uart_putc(UART0, '\n');
+
     for (;;) {
-        GPIO->DATA_0 ^= LED_BIT;
+        gpio_toggle(LED_MIO);
+        uart_puts(UART0, "tick ");
+        uart_putdec(UART0, tick_get());
+        uart_putc(UART0, '\n');
         tick_mdelay(pl_status == DEVCFG_OK ? 500 : 100);
     }
 }

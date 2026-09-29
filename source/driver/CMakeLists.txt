@@ -2,9 +2,10 @@ project("driver" C ASM)
 
 add_library("driver" INTERFACE)
 
-target_sources("driver" 
+target_sources("driver"
     INTERFACE
-    "driver_uart.c"
+    "zynq_gpio.c"
+    "zynq_uart.c"
 )
 
 target_include_directories("driver"
