@@ -27,7 +27,7 @@ int main(void) {
     uart_init(UART0, 115200);
 
     uart_puts(UART0, "pl_status=");
-    uart_putdec(UART0, (uint32_t)pl_status);
+    uart_putdec(UART0, (uint32_t)board_pl_status());
     uart_putc(UART0, '\n');
 
     for (;;) {
@@ -35,6 +35,6 @@ int main(void) {
         uart_puts(UART0, "tick ");
         uart_putdec(UART0, tick_get());
         uart_putc(UART0, '\n');
-        tick_mdelay(pl_status == DEVCFG_OK ? 500 : 100);
+        tick_mdelay(board_pl_status() == DEVCFG_OK ? 500 : 100);
     }
 }

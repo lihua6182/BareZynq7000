@@ -10,20 +10,12 @@
 
 #define LED_MIO (24u) /* MIO pin number of the LED */
 
-/*
- * Board-stage bring-up, called at the top of main() once the soc stage has
- * run (soc_init: MMU, clocks, QSPI linear mode). Configures the PL from
- * the packed image in board_fpga_bitstream.c (generated from bitstream.bin
- * by the VSCode task "Convert PL bitstream"), starts its clock and
- * releases its resets, so the rest of main() runs with the PL up.
- * Poll-based; needs no GIC or timer tick.
- */
+/* Board-stage bring-up, called after soc_init: configures the PL from
+   the packed image, starts its clock, releases its resets. Poll-based;
+   needs no GIC or timer tick. */
 void board_init(void);
 
-/*
- * Outcome of the PL programming in board_init(), kept volatile so both
- * main() and a debugger can read the latest value directly.
- */
-extern volatile enum devcfg_status pl_status;
+/* Outcome of the PL programming in board_init(). */
+enum devcfg_status board_pl_status(void);
 
 #endif /* BOARD_H */

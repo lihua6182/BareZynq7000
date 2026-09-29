@@ -641,8 +641,6 @@ static enum devcfg_status devcfg_load(const void* img, uint32_t len) {
  * when the design is ready to run.
  */
 enum devcfg_status fpga_load(const void* img, uint32_t len) {
-    enum devcfg_status st;
-
     /* UG585 ch.2 step 2: PS->PL level shifters on, DevC unlocked, PCAP
        mode selected. Runs before the image is touched so a rejected
        image leaves the bridge in a usable state. */
@@ -652,9 +650,5 @@ enum devcfg_status fpga_load(const void* img, uint32_t len) {
        command are a valid partial design, and would start running. */
     fpga_reset_assert_all();
 
-    st = devcfg_load(img, len);
-    if (st != DEVCFG_OK) {
-        return st;
-    }
-    return DEVCFG_OK;
+    return devcfg_load(img, len);
 }
