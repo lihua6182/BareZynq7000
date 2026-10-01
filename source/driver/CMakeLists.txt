@@ -4,8 +4,9 @@ add_library("driver" INTERFACE)
 
 target_sources("driver"
     INTERFACE
-    "zynq_gpio.c"
+    "zynq_mio.c"
     "zynq_uart.c"
+    "zynq_ppc.c"
 )
 
 target_include_directories("driver"

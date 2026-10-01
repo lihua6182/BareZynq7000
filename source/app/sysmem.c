@@ -6,16 +6,14 @@
 #include <errno.h>
 #include <stdint.h>
 
-/* Heap region reserved by flash_xip.ld. Fixed size, bounded above by the
-   exception stacks, so malloc can never grow into them. */
+/* Heap region reserved by flash_xip.ld, bounded by the exception stacks. */
 extern uint32_t __heap_start__;
 extern uint32_t __heap_end__;
 
 /**
- * @brief  Grow the newlib heap.
+ * @brief  Grow the newlib heap inside __heap_start__ .. __heap_end__.
  * @param  incr Bytes to add.
- * @return Previous heap end, or (void*)-1 with errno = ENOMEM when the
- *         request does not fit the reserved region.
+ * @return Previous heap end, or (void*)-1 with errno = ENOMEM.
  */
 void* _sbrk(ptrdiff_t incr) {
     static uint8_t* heap_end;

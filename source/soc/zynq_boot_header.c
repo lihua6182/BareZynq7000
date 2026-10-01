@@ -1,10 +1,8 @@
 /**
  * @file zynq_boot_header.c
- * @brief BootROM boot header, placed at the start of the QSPI image.
- *
- * UG585 ch.6. The header is what lets the BootROM execute this image in
- * place: fsbl_image_length = 0 means "do not copy, run from flash", and
- * fsbl_exe_address_ram is the XIP entry point.
+ * @brief BootROM boot header at the start of the QSPI image (UG585 ch.6):
+ *        fsbl_image_length = 0 = "do not copy, run from flash", entry =
+ *        fsbl_exe_address_ram. Checksum build-checked by CMake.
  */
 
 #include <stdint.h>

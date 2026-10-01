@@ -9,7 +9,7 @@ target_sources("soc"
     "zynq_tick.c"
     "zynq_irq.c"
     "zynq_startup.s"
-    "zynq_system.c"
+    "zynq_soc.c"
 )
 
 target_include_directories("soc"

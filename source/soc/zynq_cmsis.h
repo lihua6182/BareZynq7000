@@ -18,7 +18,7 @@
 #define __TIM_PRESENT (0U) /* Zynq-7000 has no architected generic timer */
 
 /* PL310 present; tag/DATA RAM latency regs (0x108/0x10C) are not in the
-   CMSIS struct and are written by offset (zynq_system.c). */
+   CMSIS struct and are written by offset (zynq_soc.c). */
 #define __L2C_PRESENT (1U)
 
 /* Private peripheral block (UG585 Table 4-2, PS address view). */

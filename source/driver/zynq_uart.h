@@ -4,19 +4,11 @@
 #include "zynq_soc_ip.h"
 
 /*
- * Poll-mode driver for the two Cadence UARTs (UG585 ch.19). Style:
- * linux/posix - lower_case_with_underscores, one function per function,
- * uart_* with the controller (UART0 / UART1) as first argument.
- * Register primitives are static inline here and never block; the
- * blocking helpers, the baud calculation and the printf-like printers
- * live in zynq_uart.c.
- *
- * uart_init() leaves the port at 8 data bits, no parity, 1 stop bit,
- * receiver and transmitter on, every interrupt masked. The baud rate is
- * uart_ref / (baud_gen * (baud_div + 1)) with the divisor pair chosen
- * for the smallest error.
- *
- * Routing the pins to MIO is the board's job - see mio_set_function().
+ * Poll-mode driver for the two Cadence UARTs (UG585 ch.19), uart_* with
+ * the controller (UART0 / UART1) first. Register primitives are static
+ * inline and never block; blocking helpers, the baud search and the
+ * number printers live in zynq_uart.c. Baud = uart_ref / (baud_gen *
+ * (baud_div + 1)). Pin routing is the board's job (mio_set_function()).
  *
  *   uart_init(UART1, 115200);
  *   uart_puts(UART1, "hello\n");
@@ -41,8 +33,7 @@
 /* Data                                                               */
 /* ------------------------------------------------------------------ */
 
-/* Push one byte into the TX FIFO. Check uart_tx_ready() first - writing
-   a full FIFO drops the byte silently. */
+/* Push one byte into the TX FIFO; check uart_tx_ready() first. */
 static inline void uart_send_byte(UART_Type* uart, uint8_t c) {
     uart->FIFO = (uint32_t)c;
 }
@@ -57,7 +48,7 @@ static inline int uart_tx_ready(UART_Type* uart) {
     return ((uart->SR & UART_SR_TXFULL) == 0U) ? 1 : 0;
 }
 
-/* TX FIFO empty, shift register included: the last byte is on the wire. */
+/* TX FIFO empty incl. shift register: last byte is on the wire. */
 static inline int uart_tx_done(UART_Type* uart) {
     return ((uart->SR & UART_SR_TXEMPTY) != 0U) ? 1 : 0;
 }
@@ -70,9 +61,6 @@ static inline int uart_rx_ready(UART_Type* uart) {
 /* ------------------------------------------------------------------ */
 /* Enable / reset                                                     */
 /* ------------------------------------------------------------------ */
-
-/* CR[5:2] is a pair of one-hot bits per direction: setting one clears
-   the other, hence the mask-then-or. */
 
 /* Turn the receiver and transmitter on. */
 static inline void uart_enable(UART_Type* uart) {
@@ -119,13 +107,13 @@ static inline void uart_reset_rx(UART_Type* uart) {
 /* ------------------------------------------------------------------ */
 
 /* BAUDGEN, the clock divider: 1..65535, 0 disables the clock. */
-static inline void uart_set_baud_gen(UART_Type* uart, uint32_t cd) {
-    uart->BAUDGEN = cd & UART_BAUDGEN_MASK_Msk;
+static inline void uart_set_baud_gen(UART_Type* uart, uint32_t baudgen) {
+    uart->BAUDGEN = baudgen & UART_BAUDGEN_MASK_Msk;
 }
 
 /* BAUDDIV, the second divider: the register value is (divisor - 1). */
-static inline void uart_set_baud_div(UART_Type* uart, uint32_t div) {
-    uart->BAUDDIV = div & UART_BAUDDIV_MASK_Msk;
+static inline void uart_set_baud_div(UART_Type* uart, uint32_t bauddiv) {
+    uart->BAUDDIV = bauddiv & UART_BAUDDIV_MASK_Msk;
 }
 
 /* ------------------------------------------------------------------ */
@@ -226,8 +214,7 @@ int uart_try_getc(UART_Type* uart);
 /* Send a NUL-terminated string. */
 void uart_puts(UART_Type* uart, const char* s);
 
-/* Send len bytes: posix write() flavour. Returns len, or -1 for a NULL
-   buffer. */
+/* Send len bytes (posix write() flavour); returns len, or -1 on NULL. */
 int uart_write(UART_Type* uart, const void* buf, uint32_t len);
 
 /* Print v as unsigned decimal. */

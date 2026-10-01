@@ -1,7 +1,11 @@
 /.vs
 /.venv
 /build
-/doc
+/doc/*
+!doc/code_notes.md
 /toolchain
 
 __pycache__
+
+# J-Flash 运行日志
+scripts/jflash/*.log

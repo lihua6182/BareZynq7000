@@ -28,6 +28,15 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
+        },
+        {
+            "name": "BareZynq7000-Release",
+            "inherits": "gcc_arm_base",
+            "binaryDir": "${sourceDir}/build",
+            "toolchainFile": "./scripts/cmake/gcc-arm-ca9.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
         }
     ]
 }

@@ -1,6 +1,9 @@
 project("app" C ASM)
 
-add_executable("app"
+add_executable("app")
+
+target_sources("app"
+    PRIVATE
     "main.c"
     "syscalls.c"
     "sysmem.c"

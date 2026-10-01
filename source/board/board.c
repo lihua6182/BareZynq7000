@@ -10,15 +10,15 @@
 #include "zynq_clock.h"
 
 /* Outcome of the last PL programming; query via board_pl_status(). */
-static enum devcfg_status pl_status = DEVCFG_NO_IMAGE;
+static enum pl_status pl_load_status = PL_NO_IMAGE;
 
 /**
  * @brief  Query the outcome of the PL programming done by board_init().
- * @return DEVCFG_OK, DEVCFG_NO_IMAGE (no bitstream linked), else the
+ * @return PL_OK, PL_NO_IMAGE (no bitstream linked), else the
  *         first load error.
  */
-enum devcfg_status board_pl_status(void) {
-    return pl_status;
+enum pl_status board_pl_status(void) {
+    return pl_load_status;
 }
 
 /**
@@ -30,12 +30,17 @@ enum devcfg_status board_pl_status(void) {
 void board_init(void) {
     /* fpga_img[] is generated from bitstream.bin; zero length = --stub. */
     if (FPGA_IMG_LEN != 0u) {
-        pl_status = fpga_load(fpga_img, FPGA_IMG_LEN);
+        pl_load_status = fpga_load(fpga_img, FPGA_IMG_LEN);
     }
 
-    if (pl_status == DEVCFG_OK) {
-        /* FCLK0 = IO PLL / 10 = 100 MHz; clock before reset release. */
-        fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true);
+    if (pl_load_status == PL_OK) {
+        /* FCLK0 = IO PLL / 10 = 100 MHz; clock before reset release.
+           PPC 的 SHF 引擎 SCK = FCLK0 / (2*(1+div))：程序里 div=1，
+           即 SCK = 100/4 = 25 MHz。 */
+        clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true);
+
+        /* FCLK0 = IO PLL / 20 = 50 MHz; clock before reset release. */
+        clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true);
 
         /* FPGA_RST_CTRL resets to 0xF; the FSBL clears it after DONE. */
         fpga_reset_release_all();

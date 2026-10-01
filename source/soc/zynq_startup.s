@@ -21,10 +21,8 @@ _vectors:
         .global reset_handler
         .type   reset_handler, function
 reset_handler:
-        // Disable caches, MMU and branch prediction, in case they were
-        // left enabled from an earlier run. Not required after a cold
-        // reset, but harmless and makes a warm reset (e.g. from a
-        // debugger) behave the same.
+        // Disable caches/MMU/BP in case an earlier run left them on;
+        // makes a debugger warm reset behave like a cold one.
         mrc     p15, 0, r0, c1, c0, 0       /* CP15 System Control Register */
         bic     r0, r0, #(0x1 << 12)        /* I: disable I cache            */
         bic     r0, r0, #(0x1 <<  2)        /* C: disable D cache            */
@@ -34,10 +32,8 @@ reset_handler:
         bic     r0, r0, #(0x1 << 28)        /* TRE: disable TEX remap        */
         mcr     p15, 0, r0, c1, c0, 0
 
-        // Disable the L2 cache (PL310) while the MMU is still off; it is
-        // re-enabled (prefetch off) by mmu_enable() in soc_init.
-        // reg1_control sits at L2C base + 0x100, bit 0 is l2_enable
-        // (UG585 appendix A).
+        // L2 off while the MMU is off; re-enabled (prefetch off) by
+        // mmu_and_caches_enable(). reg1_control = L2C + 0x100, bit 0.
         ldr     r0, =0xF8F02100
         mov     r1, #0
         str     r1, [r0]
@@ -47,13 +43,8 @@ reset_handler:
         mcr     p15, 0, r0, c12, c0, 0
 
 
-        // Enable RAM: keep the BootROM split mapping
-        // (OCM_CFG[RAM_HI] = 4'b1000):
-        //   OCM0-2 (192 KB) at 0x00000000 - data/bss/heap/stacks
-        //   OCM3   (64 KB)  at 0xFFFF0000 - MMU table, .no_cache_ram
-        // Written back explicitly so a warm reset lands in the same state;
-        // OCM_CFG bit 4 (SWAP) must be written back as read, hence the
-        // read-modify-write.
+        // Keep the BootROM OCM split (RAM_HI=1000): OCM0-2 at 0x0,
+        // OCM3 at 0xFFFF0000. RMW: bit 4 (SWAP) is write-as-read.
         ldr     r3, =0xF8000000
         movw    r2, #0xDF0D
         str     r2, [r3, #0x008]            /* SLCR_UNLOCK                   */
@@ -211,8 +202,7 @@ _start:
         cmp     r0, r1
         blo     .Lbss_zero
 
-        /* system_init runs the QSPI/clock reconfiguration from .fast in
-           OCM, so the section must be resident before the call. */
+        /* .fast must be resident before soc_init runs from it. */
         bl      soc_init
 
         ldr     r4, =__preinit_array_start

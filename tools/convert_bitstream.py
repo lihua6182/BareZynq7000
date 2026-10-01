@@ -23,7 +23,7 @@ Usage:
   convert_bitstream.py <bitstream.bin> <out.c> <out.h>   pack and emit the pair
   convert_bitstream.py --stub <out.c> <out.h>            no-bitstream stub
                                                          (target reports
-                                                         DEVCFG_NO_IMAGE)
+                                                         PL_NO_IMAGE)
 
 Exits non-zero (with a message) on any input problem.
 """
@@ -85,7 +85,7 @@ const uint8_t fpga_img{c_decl} __attribute__((aligned(4096))) = {{
 
 def emit_stub(out_c: str, out_h: str) -> None:
     """Empty image: FPGA_IMG_LEN == 0 makes board_init() skip programming
-    and report DEVCFG_NO_IMAGE. The definition carries one placeholder
+    and report PL_NO_IMAGE. The definition carries one placeholder
     byte so C never sees a zero-size array."""
     comment = "Stub: this build embeds no PL bitstream (--stub conversion)."
     comment_c = (f"{comment}\n"
@@ -169,7 +169,7 @@ def main() -> None:
     packed = rle_encode(pcap)
     hdr = struct.pack(HDR_FMT, MAGIC, len(pcap), len(packed), zlib.crc32(pcap) & 0xFFFFFFFF)
     image = hdr + packed
-    # devcfg_load() requires a whole-word image length; the pad bytes sit
+    # pl_load_image() requires a whole-word image length; the pad bytes sit
     # past packed_len, which the decoder never reads (pay_end comes from
     # the header).
     image += b"\x00" * (-len(image) % 4)

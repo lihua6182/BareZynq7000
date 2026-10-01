@@ -1,10 +1,7 @@
 /**
  * @file zynq_uart.c
- * @brief UART driver implementation (UG585 ch.19).
- *
- * Blocking I/O, format setup, baud rate search and clock gating - the
- * parts that need more than one register access. FIFO and status
- * primitives are static inline in zynq_uart.h.
+ * @brief UART driver: the parts that need more than one register access
+ *        (blocking I/O, format, baud search, clock gating).
  */
 
 #include "zynq_uart.h"
@@ -14,41 +11,38 @@
 #include "zynq_clock.h"
 
 /* APER_CLK_CTRL ref clock gates: bit 20 UART0, bit 21 UART1. */
-#define APER_UART0_CLK (1UL << 20)
-#define APER_UART1_CLK (1UL << 21)
+#define UART0_CLK_GATE_BIT (1UL << 20)
+#define UART1_CLK_GATE_BIT (1UL << 21)
 
 /**
- * @brief  Find the CD/BDIV pair closest to a requested baud rate.
- * @param  ref  UART reference clock in Hz.
- * @param  baud Requested baud rate.
- * @param  cd   Out: BAUDGEN divisor, 1..65535.
- * @param  bdiv Out: BAUDDIV divisor, 4..255.
- * @return 0 when a pair exists, -1 when no setting comes close.
- *
- * baud = ref / (cd * (bdiv + 1)). Scans bdiv, rounds cd, keeps the pair
- * with the least absolute error (UG585 ch.19 "Baud Rate"). bdiv below 4
- * is not a valid setting, hence the start of the scan.
+ * @brief  Find the BAUDGEN/BAUDDIV pair closest to a baud rate.
+ * @param  ref_hz  UART reference clock in Hz.
+ * @param  baud    Requested baud rate.
+ * @param  baudgen Out: BAUDGEN divisor, 1..65535.
+ * @param  bauddiv Out: BAUDDIV divisor, 4..255 (below 4 is invalid).
+ * @return 0 when a pair exists, -1 when nothing comes close.
  */
-static int baud_divs(uint32_t ref, uint32_t baud, uint32_t* cd, uint32_t* bdiv) {
+static int find_baud_divisors(uint32_t ref_hz, uint32_t baud, uint32_t* baudgen,
+                              uint32_t* bauddiv) {
     uint32_t best_err = 0xFFFFFFFFUL;
-    uint32_t b;
-    uint32_t c;
-    uint32_t denom;
+    uint32_t div;
+    uint32_t gen;
+    uint32_t denominator;
     uint32_t actual;
     uint32_t err;
 
-    for (b = 4U; b <= 255U; b++) {
-        denom = baud * (b + 1U);
-        c = (ref + denom / 2U) / denom;
-        if ((c == 0U) || (c > 0xFFFFUL)) {
+    for (div = 4U; div <= 255U; div++) {
+        denominator = baud * (div + 1U);
+        gen = (ref_hz + denominator / 2U) / denominator;
+        if ((gen == 0U) || (gen > 0xFFFFUL)) {
             continue;
         }
-        actual = ref / (c * (b + 1U));
+        actual = ref_hz / (gen * (div + 1U));
         err = (actual > baud) ? (actual - baud) : (baud - actual);
         if (err < best_err) {
             best_err = err;
-            *cd = c;
-            *bdiv = b;
+            *baudgen = gen;
+            *bauddiv = div;
         }
     }
     return (best_err == 0xFFFFFFFFUL) ? -1 : 0;
@@ -59,8 +53,8 @@ static int baud_divs(uint32_t ref, uint32_t baud, uint32_t* cd, uint32_t* bdiv) 
  * @param  uart UART0 or UART1.
  * @return The clock-gate bit for that controller.
  */
-static uint32_t aper_gate(UART_Type* uart) {
-    return (uart == UART1) ? APER_UART1_CLK : APER_UART0_CLK;
+static uint32_t uart_clock_gate_bit(UART_Type* uart) {
+    return (uart == UART1) ? UART1_CLK_GATE_BIT : UART0_CLK_GATE_BIT;
 }
 
 /**
@@ -69,7 +63,7 @@ static uint32_t aper_gate(UART_Type* uart) {
  */
 void uart_enable_clock(UART_Type* uart) {
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
-    SLCR->APER_CLK_CTRL |= aper_gate(uart);
+    SLCR->APER_CLK_CTRL |= uart_clock_gate_bit(uart);
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
@@ -79,7 +73,7 @@ void uart_enable_clock(UART_Type* uart) {
  */
 void uart_disable_clock(UART_Type* uart) {
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
-    SLCR->APER_CLK_CTRL &= ~aper_gate(uart);
+    SLCR->APER_CLK_CTRL &= ~uart_clock_gate_bit(uart);
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
@@ -136,45 +130,41 @@ void uart_set_stopbits(UART_Type* uart, uint32_t bits) {
 }
 
 /**
- * @brief  Program the baud rate from the live reference clock.
+ * @brief  Program the baud rate from the live reference clock; only the
+ *         two divisor registers change, safe while running.
  * @param  uart UART0 or UART1.
  * @param  baud Requested baud rate.
  * @return 0 on success, -1 when baud is 0 or unreachable.
- *
- * Safe to call while running: only the two divisor registers change.
  */
 int uart_set_baud(UART_Type* uart, uint32_t baud) {
-    struct clk_freqs clks;
-    uint32_t cd;
-    uint32_t bdiv;
+    struct clock_freqs clocks;
+    uint32_t baudgen;
+    uint32_t bauddiv;
 
     if (baud == 0U) {
         return -1;
     }
-    clk_freqs_get(&clks);
-    if (baud_divs(clks.uart_ref, baud, &cd, &bdiv) != 0) {
+    clock_freqs_get(&clocks);
+    if (find_baud_divisors(clocks.uart_ref, baud, &baudgen, &bauddiv) != 0) {
         return -1;
     }
-    uart_set_baud_gen(uart, cd);
-    uart_set_baud_div(uart, bdiv);
+    uart_set_baud_gen(uart, baudgen);
+    uart_set_baud_div(uart, bauddiv);
     return 0;
 }
 
 /**
- * @brief  Initialize a controller for 8N1 polled I/O.
+ * @brief  Initialize a controller for 8N1 polled I/O: ref clock on, both
+ *         paths reset, format + divisors programmed, interrupts masked.
  * @param  uart UART0 or UART1.
  * @param  baud Requested baud rate.
  * @return 0 on success, -1 when the baud rate is unreachable.
- *
- * MIO routing and clock setup are the caller's job; this gates the ref
- * clock on, resets both paths, programs the format and the divisors and
- * leaves every interrupt masked.
  */
 int uart_init(UART_Type* uart, uint32_t baud) {
     uart_enable_clock(uart);
 
-    /* Both resets in one write: the enable bits go with them, so the
-       port is quiet while the format and the divisors are programmed. */
+    /* Both resets in one write; the port stays quiet while the format
+       and the divisors are programmed. */
     uart->CR = UART_CR_RXRST | UART_CR_TXRST;
 
     uart_set_databits(uart, UART_DATABITS_8);
@@ -263,34 +253,34 @@ int uart_write(UART_Type* uart, const void* buf, uint32_t len) {
 /**
  * @brief  Print an unsigned value in decimal.
  * @param  uart UART0 or UART1.
- * @param  v    Value to print.
+ * @param  value Value to print.
  */
-void uart_putdec(UART_Type* uart, uint32_t v) {
-    char buf[10]; /* 4294967295 */
-    uint32_t n = 0U;
+void uart_putdec(UART_Type* uart, uint32_t value) {
+    char digits[10]; /* 4294967295 */
+    uint32_t len = 0U;
 
     do {
-        buf[n] = (char)('0' + (v % 10U));
-        v /= 10U;
-        n++;
-    } while (v != 0U);
-    while (n != 0U) {
-        n--;
-        uart_putc(uart, (int)buf[n]);
+        digits[len] = (char)('0' + (value % 10U));
+        value /= 10U;
+        len++;
+    } while (value != 0U);
+    while (len != 0U) {
+        len--;
+        uart_putc(uart, (int)digits[len]);
     }
 }
 
 /**
  * @brief  Print an unsigned value as 8 uppercase hex digits.
  * @param  uart UART0 or UART1.
- * @param  v    Value to print.
+ * @param  value Value to print.
  */
-void uart_puthex(UART_Type* uart, uint32_t v) {
-    static const char hex[] = "0123456789ABCDEF";
+void uart_puthex(UART_Type* uart, uint32_t value) {
+    static const char hex_digits[] = "0123456789ABCDEF";
     uint32_t i;
 
     for (i = 0U; i < 8U; i++) {
-        uart_putc(uart, (int)hex[(v >> 28U) & 0xFU]);
-        v <<= 4U;
+        uart_putc(uart, (int)hex_digits[(value >> 28U) & 0xFU]);
+        value <<= 4U;
     }
 }
