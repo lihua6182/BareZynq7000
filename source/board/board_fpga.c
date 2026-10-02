@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "lzma_stream.h"
+#include "zynq_cache.h"
 #include "zynq_common.h"
 #include "zynq_soc_ip.h"
 
@@ -47,19 +48,18 @@
  *   0x08 packed_len payload length
  *   0x0C crc32      CRC-32 (EDB88320) over the raw image
  */
-#define ZBLZ_MAGIC     (0x5A4C425AUL) /* LZMA payload */
-#define ZBSP_MAGIC     (0x5A425350UL) /* RLE payload (fallback) */
-#define ZB_HDR_BYTES   (16UL)
-#define CRC32_POLY     (0xEDB88320UL)
+#define ZBLZ_MAGIC   (0x5A4C425AUL) /* LZMA payload */
+#define ZBSP_MAGIC   (0x5A425350UL) /* RLE payload (fallback) */
+#define ZB_HDR_BYTES (16UL)
+#define CRC32_POLY   (0xEDB88320UL)
 
 /* The sync word sits within the first 128 bytes of every 7-series
    layout. */
 #define SYNC_SCAN_BYTES (128UL)
 
-/* Staging buffer between the RLE decoder and the DMA: 64-byte aligned
+/* Staging buffer between the decoder and the DMA: 64-byte aligned
    (bursts never straddle a 4 KB page), cacheable OCM (clean before DMA). */
-#define DMA_STAGE_BYTES      (4096UL)
-#define L1_DCACHE_LINE_BYTES (32UL) /* Cortex-A9 L1 D-cache line */
+#define DMA_STAGE_BYTES (4096UL)
 static uint32_t dma_stage_buf[DMA_STAGE_BYTES / 4UL] __attribute__((aligned(64)));
 
 struct zb_header {
@@ -209,23 +209,6 @@ static uint32_t crc32_update(uint32_t crc, const uint8_t* bytes, uint32_t len) {
         crc = (crc >> 8U) ^ crc32_table[(crc ^ bytes[i]) & 0xFFU];
     }
     return crc;
-}
-
-/**
- * @brief  Clean a buffer to RAM: the DMA reads via the ACP (L2-coherent,
- *         not L1). No invalidate - the CPU never reads it back.
- * @param  buf Buffer to clean.
- * @param  len Valid bytes at the start of the buffer.
- */
-static void clean_l1_dcache(const void* buf, uint32_t len) {
-    uint32_t addr = (uint32_t)(uintptr_t)buf;
-    uint32_t end = addr + ((len + (L1_DCACHE_LINE_BYTES - 1UL)) & ~(L1_DCACHE_LINE_BYTES - 1UL));
-
-    while (addr < end) {
-        L1C_CleanDCacheMVA((void*)(uintptr_t)addr);
-        addr += L1_DCACHE_LINE_BYTES;
-    }
-    __DSB();
 }
 
 /**
@@ -476,7 +459,7 @@ static enum pl_status load_zbsp_image(const uint8_t* img,
             uint32_t rem = filled & 3UL;
 
             if (words != 0UL) {
-                clean_l1_dcache(stage, words * 4UL);
+                cache_clean_acp(stage, words * 4UL);
                 crc = crc32_update(crc, stage, words * 4UL);
                 st = pcap_send_block(dma_stage_buf, words);
                 if (st != PL_OK) {
@@ -515,10 +498,10 @@ static enum pl_status load_zbsp_image(const uint8_t* img,
    the DMA carry logic of the RLE path is not needed. */
 struct zblz_sink {
     uint8_t* stage;
-    uint32_t filled;      /* bytes staged, awaiting DMA            */
-    uint32_t crc;         /* running CRC over DMA'd words          */
+    uint32_t filled; /* bytes staged, awaiting DMA            */
+    uint32_t crc;    /* running CRC over DMA'd words          */
     int sync_checked;
-    enum pl_status st;    /* first sink-side error sticks          */
+    enum pl_status st; /* first sink-side error sticks          */
 };
 
 /**
@@ -539,7 +522,7 @@ static enum pl_status zblz_flush(struct zblz_sink* s) {
         }
         s->sync_checked = 1;
     }
-    clean_l1_dcache(s->stage, s->filled);
+    cache_clean_acp(s->stage, s->filled);
     s->crc = crc32_update(s->crc, s->stage, s->filled);
     st = pcap_send_block(s->stage, s->filled / 4UL);
     if (st == PL_OK) {
@@ -583,6 +566,7 @@ static enum pl_status load_zblz_image(const uint8_t* img,
                                       const struct zb_header* hdr) {
     struct zblz_sink s;
 
+    crc32_table_init(); /* zblz_flush() folds through the table */
     s.stage = (uint8_t*)dma_stage_buf;
     s.filled = 0UL;
     s.crc = 0xFFFFFFFFUL;

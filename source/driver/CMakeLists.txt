@@ -4,6 +4,7 @@ add_library("driver" INTERFACE)
 
 target_sources("driver"
     INTERFACE
+    "zynq_cache.c"
     "zynq_mio.c"
     "zynq_uart.c"
     "zynq_ppc.c"
