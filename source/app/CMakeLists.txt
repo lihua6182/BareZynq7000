@@ -13,6 +13,7 @@ target_link_libraries("app"
     PRIVATE
     "board"
     "driver"
+    "cherryusb"
 )
 
 target_link_options("app"

@@ -7,6 +7,7 @@ target_sources("driver"
     "zynq_mio.c"
     "zynq_uart.c"
     "zynq_ppc.c"
+    "zynq_usb.c"
 )
 
 target_include_directories("driver"

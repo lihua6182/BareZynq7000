@@ -1,4 +1,5 @@
 add_subdirectory("soc")
+add_subdirectory("middleware")
 add_subdirectory("driver")
 add_subdirectory("board")
 add_subdirectory("app")

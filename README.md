@@ -31,14 +31,15 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 ## 源码结构
 
 ```
-source/
-  app/     可执行目标 app：main.c + newlib 桩（syscalls/sysmem）
-  board/   板级：board_fpga（PL 配置 + PL 控制面，手写）+ board_fpga_bitstream（PL 镜像，生成物）
-  driver/  PS 外设：zynq_mio（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart
-  soc/     zynq_startup.s、zynq_soc（MMU/L2/时钟/QSPI 启动）、zynq_clock（时钟树）、
-           zynq_irq（GIC）、zynq_tick（TTC0）、zynq_boot_header、寄存器头 + CMSIS Core(A) 子集
+  app/        可执行目标 app：main.c + newlib 桩（syscalls/sysmem）
+  board/      板级：board_fpga（PL 配置 + PL 控制面，手写）+ board_fpga_bitstream（PL 镜像，生成物）
+  driver/     PS 外设：zynq_mio（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart、
+              zynq_usb（USB0 底层接线 + USB3300 PHY，模块词 usb_）
+  soc/        zynq_startup.s、zynq_soc（MMU/L2/时钟/QSPI 启动）、zynq_clock（时钟树）、
+              zynq_irq（GIC）、zynq_tick（TTC0）、zynq_boot_header、寄存器头 + CMSIS Core(A) 子集
+  middleware/ cherryusb（vendored v1.6.1 最小设备栈：usbd_core + CDC ACM + chipidea port）
 ```
-前三者在 CMake 里是 `INTERFACE` 库（只传源文件与包含路径，不产生归档），只有 `app` 是真目标。
+`driver`/`board`/`soc`/`middleware` 在 CMake 里是 `INTERFACE` 库（只传源文件与包含路径，不产生归档），只有 `app` 是真目标。
 `doc/code_notes.md` 是源码注释的"长文版"——背景、取舍、与 FSBL/SEGGER/内核的对照都放在那里（UG585 等 PDF 被 `.gitignore` 排除）。
 
 ## 板级现状
@@ -54,11 +55,22 @@ source/
   复位全接 `FCLK_RESET0_N`。`main()` 在 PL 配置成功后对它跑一遍 `bram_test()`（8 KB 写读回，图案 + 其取反两遍）。
 - proto_coproc 协议协处理器 @ 0x4000_0000（MioLink 工程 IP v1.2，PL 时钟域 = FCLK0 = 100MHz；
   注意这里与上面 `project_1`/`bram_test` 是两代 PL 设计，**当前板上跑的是 MioLink 这一代**）。
-  `main()` 跑 `stress_run()`：stress_prog 让 SHF 引擎连续输出 SPI 字流 30 s
-  （**SHF div=1 → SCK=FCLK0/4=25MHz**、133 拍/字），每秒打印 words/s 与引擎效率。
-  **注意**：该地址需要 MioLink 工程重新生成的比特流（convert_bitstream.py 流程不变），
-  旧的 BRAM-only 镜像下这个地址无从站，访问会挂死 GP0 总线。
-  gpio[7:0] 的管脚约束（XDC）在 MioLink 工程里：**gpio[0]=G19(SCK) / gpio[1]=E18(MOSI)** … gpio[7]=G15。
+  PPC 侧的 stress/swd 例程（spi_stress.s / swd_dap.s + `driver/zynq_swd.*`）当前不在树里
+  （stash "SWD测试"），`main()` 现在跑的是下面的 USB CDC 回环。
+- **USB CDC 回环**（`main()` 当前内容）：Zynq-7000 的 USB 控制器是 **ChipIdea usb2 2.20a**
+  （TRM App.B：`ID` 复位值 0xE441FA05，USBCMD@0x140/ENDPTCTRL@0x1C0 一族——和 HPM 的 USB IP
+  同族，**不是** DWC2，别选错 port），USB0 经 **MIO 28..39 的 ULPI 口**外接 **USB3300**（3.3V bank，
+  SLEW FAST），**PHY 复位脚 MIO 47**（USB3300 的 RESET 引脚高有效，直连：高=复位/低=运行；GPIO 推挽）。设备栈是 vendored 的
+  **CherryUSB v1.6.1**（`source/middleware/cherryusb/`，`port/chipidea`，无 OS：EP0 全在 IRQ 上下文，
+  不用 osal）；底层接线在 `driver/zynq_usb.c`（模块词 `usb_`），由 CherryUSB 钩子
+  `usb_dc_low_level_init()` 拉起：ULPI 引脚复用 → `USB0_CLK_CTRL=0x00101941`（MIO ULPI 时钟输入）
+  → `APER_CLK_CTRL[2]` → MIO47 复位脉冲 → `USB_RST_CTRL` 脉冲 → GIC SPI 53。
+  vendor 副本与上游唯一差异：`USBMODE.SLOM` 按 Zynq 极性写 1（=关闭 setup lockout，配 tripwire）。
+  测速模式（配合 `tools/test_cdc_speed.py`，DTR 门控两相）：DTR=0 下行相——收完即丢、
+  立即续挂 4096B 读（排水）；DTR=1 上行相——主循环轮询续写 4096B 压满 IN 管道。
+  数据缓冲与 QH/QTD 链表都在 `.no_cache_ram`（OCM 高 64KB，DMA 可达，免 cache 维护），
+  UART 每 5s 打印 rx/tx 计数。实测（Win10 usbser，高速枚举）：
+  **双向 ~30-31 MB/s**（4096B 缓冲；2048B 时 ~28-30 MB/s）。
 
 ## 构建与烧写
 
@@ -67,12 +79,19 @@ cmake --preset BareZynq7000-Debug     # 配置（Ninja，Debug，-Og）
 cmake --build build                    # 产物 build/source/app/app.{elf,bin,hex}
 ```
 另有 `BareZynq7000-Release`（`-O2`）——**两个 preset 共用同一个 `build/` 目录**，切换时要重新 configure；
-上板实测跑的是 Release 档。构建末尾会自动校验 BootROM 头。烧写用 J-Flash 工程 `scripts/jflash/jflash_zynq7000.jflash`。
+上板实测跑的是 Release 档。构建末尾会自动校验 BootROM 头。烧写用 J-Flash 工程
+`scripts/jflash/jflash_zynq7000.jflash`（数据文件已内嵌 `build/source/app/app.hex`），
+命令行（= VSCode task "Flash (J-flash QSPI XIP)"）：`"C:\Program Files\SEGGER\JLink_V956\JFlash.exe" -openprj<工程> -auto -exit`，
+退出码 0 成功。**注意**：命令行必须用 `JFlash.exe`；`JFlashSPI_CL.exe -open` 这条路在本板上
+会报 "Failed to auto-detect SPI Flash"（2026-10 实测，勿再踩）。
 
 烧写的硬性规矩（实测定案，见项目记忆）：J-Flash 的 flash loader 装进低 OCM，会覆盖
 `.fast`/`.data`/`.bss`，而挪走 `RAMAddr` 的方案实测无效（J-Flash 只接受 `0x20` 这类窗口，
 高段窗口顶部又撞系统栈顶）。因此 **`RAMAddr=0x20/0x20000` 保持原样，每次 J-Flash 烧写后必须
-断电重启**（或至少 `SetPC` 到 `reset_handler` 全量重启），绝不能从 halt 直接 `g` 恢复运行。
+断电重启**（或至少 `SetPC` 到 `reset_handler` 全量重启，绝不能从 halt 直接 `g` 恢复运行）——
+脚本化重启可用 J-Link：`JLink.exe -device CORTEX-A9 -if JTAG -speed 4000 -jtagconf 6,1
+-autoconnect 1` 后 `wreg cpsr 0x1D3 / wreg pc 0xFC000900 / g`（reset_handler 自带缓存/MMU
+清理，等于软冷启动）。
 烧写失败（exit 1）会把板子留在坏状态，继续重试无效，先断电再来。
 
 PL 比特流：`source/board/bitstream.bin`（Vivado 原生 .bin）经
@@ -102,6 +121,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   |---|---|---|
   | `mio_` | `zynq_mio.h` | PS 引脚域：MIO pad/pinmux（SLCR，ch.6，pad 0..53）+ GPIO 控制器（ch.14，pin 0..117 含 EMIO），一个模块两半（pin n == pad n, n<54） |
   | `uart_` | `zynq_uart.h` | Cadence UART |
+  | `usb_` | `zynq_usb.h` | USB0 底层接线（ChipIdea usb2 + USB3300 ULPI，CherryUSB 钩子） |
   | `clock_` | `zynq_clock.h` | 时钟树读回（`clock_freqs_get`）+ PL 时钟路由（`clock_fclk_config` / `clock_fclk_enable` / `clock_fclk_freq_get`） |
   | `irq_` | `zynq_irq.h` | GIC 分发 |
   | `tick_` | `zynq_tick.h` | TTC0 毫秒 tick |
