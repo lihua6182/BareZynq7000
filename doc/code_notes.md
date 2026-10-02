@@ -119,9 +119,9 @@ PL310 AUX_CNT bit28/29（IPFE/DPFE）与 ACTLR bit1 开着时，预取器会在 
 
 ### qspi_reconfig 目标状态
 
-QSPI ref = IO PLL/5 = 200 MHz、SCLK = 100 MHz、LPBK_DLY_ADJ 内部回环采样、
-MIO8/9 反馈时钟环回路由；退出 linear 模式前必须排空 FIFO（ch.12），
-`LQSPI_RST_CTRL` 脉冲会清两个复位域。
+QSPI ref = IO PLL/5 = 200 MHz、SCLK = 100 MHz、LPBK_DLY_ADJ[USE_LPBK]=1 内部回环采样
+（DLY 保持复位值；MIO8/9 不复用、板上未接线，SCLK_FB 焊盘环回路径关闭）；退出 linear
+模式前必须排空 FIFO（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
 
 ---
 

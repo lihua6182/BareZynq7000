@@ -129,10 +129,6 @@ static void qspi_reconfig(void) {
     SLCR->LQSPI_CLK_CTRL = (5U << 8) | /* DIVISOR = 5                     */
                            (1U << 0);  /* CLKACT = 1, SRCSEL = 0x: IO PLL */
 
-    /* MIO8/9 = QSPI_SCLK_FB (UG585 Table 6-10): loopback needs the ring closed. */
-    SLCR->MIO_PIN_08 = 0x00000602U;
-    SLCR->MIO_PIN_09 = 0x00000602U;
-
     SLCR->LQSPI_RST_CTRL = (1U << 1) | /* QSPI_REF_RST                    */
                            (1U << 0);  /* LQSPI_CPU1X_RST                 */
     SLCR->LQSPI_RST_CTRL = 0U;
@@ -143,7 +139,10 @@ static void qspi_reconfig(void) {
 
     /* 4. Reprogram controller, re-enter linear mode (LQSPI_CR = 0x8000016B). */
     QSPI->CR = 0x800238C1U;
-    QSPI->LPBK_DLY_ADJ = 0x2DU; /* USE_LPBK = 1; reserved [4:0] at reset value */
+    /* UG585 App.A: bit5 USE_LPBK = 1 = internal loopback sampling clock
+       (active only with BAUD_RATE_DIV = 000 above); DLY[4:0] keep reset
+       value - MIO8 pad loopback is NOT used (pin left in its boot state). */
+    QSPI->LPBK_DLY_ADJ = 0x2DU;
     QSPI->LQSPI_CR = lqspi_cr;  /* LQ_MODE = 1                    */
     QSPI->ER = 1U;              /* SPI_EN = 1                     */
 }

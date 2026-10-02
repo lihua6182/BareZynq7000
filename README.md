@@ -26,7 +26,7 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 2. Flash的0KB处(`0xFC00_0000`)放置镜像头(`.boot_header`)。
 3. Flash的`0x8C0`处(`0xFC00_08C0`)放置中断向量表。
 4. BootROM读取Flash头部的`.boot_header`块，不复制fsbl（XIP），直接跳转到镜像起始处的向量表首项进入`reset_handler`。
-5. `soc_init()`按UG585第25章的PLL更新序列把时钟配置到UG585表25-3（6:2:1模式）示例1的状态：CPU 667MHz、外设总线CPU_1x 111MHz、QSPI参考200MHz，Flash实际SCLK=100MHz（W25Q128JV四线0x6B读，Config_reg波特率÷2 + LPBK_DLY_ADJ内部回环采样DLY=00 + MIO8/9反馈时钟环回路由）。MMU开启后、QSPI重配前，`xip_warm_cache()`把整个XIP镜像读入统一的L2缓存——实测这块板经刚重配的QSPI线性口的读不可靠，预热保证重配窗口内零flash取指。QSPI参数切换在OCM的`.fast`段中按UG585第12章流程执行：退出linear模式→排空FIFO→改时钟并脉冲复位两个控制器复位域→重编程控制器寄存器→重新进入linear模式。时钟参数：晶振频率（`PS_CLK_HZ`，33.333MHz）在`source/soc/zynq_common.h`中配置，是全工程唯一硬编码的频率；其余所有时钟频率（PLL/CPU/外设参考时钟等）在运行时由`zynq_clock.c`的`clock_freqs_get()`从SLCR寄存器读出。
+5. `soc_init()`按UG585第25章的PLL更新序列把时钟配置到UG585表25-3（6:2:1模式）示例1的状态：CPU 667MHz、外设总线CPU_1x 111MHz、QSPI参考200MHz，Flash实际SCLK=100MHz（W25Q128JV四线0x6B读，Config_reg波特率÷2 + LPBK_DLY_ADJ[USE_LPBK]=1内部环回采样、DLY保持复位值；MIO8/9不复用——板上未接线，SCLK_FB焊盘环回也未启用）。MMU开启后、QSPI重配前，`xip_warm_cache()`把整个XIP镜像读入统一的L2缓存——实测这块板经刚重配的QSPI线性口的读不可靠，预热保证重配窗口内零flash取指。QSPI参数切换在OCM的`.fast`段中按UG585第12章流程执行：退出linear模式→排空FIFO→改时钟并脉冲复位两个控制器复位域→重编程控制器寄存器→重新进入linear模式。时钟参数：晶振频率（`PS_CLK_HZ`，33.333MHz）在`source/soc/zynq_common.h`中配置，是全工程唯一硬编码的频率；其余所有时钟频率（PLL/CPU/外设参考时钟等）在运行时由`zynq_clock.c`的`clock_freqs_get()`从SLCR寄存器读出。
 
 ## 源码结构
 
