@@ -10,6 +10,7 @@
 
 #include <string.h>
 
+#include "lzma_stream.h"
 #include "zynq_common.h"
 #include "zynq_soc_ip.h"
 
@@ -37,16 +38,18 @@
                         DEVCFG_IXR_PCFG_HMAC_ERR_Msk | \
                         DEVCFG_IXR_PCFG_SEU_ERR_Msk)
 
-/* ZBSP packed image (tools/convert_bitstream.py); the magic doubles as
- * the load-path selector - bitgen images start with 0xFFFFFFFF padding.
+/* Packed images (tools/convert_bitstream.py); the magic doubles as the
+ * load-path selector - bitgen images start with 0xFFFFFFFF padding.
+ * ZBLZ (default) and ZBSP share the 16-byte LE header layout:
  *
- *   0x00 magic      "ZBSP"
+ *   0x00 magic      "ZBLZ" (raw LZMA1 payload) or "ZBSP" (RLE payload)
  *   0x04 raw_len    uncompressed image length, % 4 == 0
- *   0x08 packed_len RLE payload length
+ *   0x08 packed_len payload length
  *   0x0C crc32      CRC-32 (EDB88320) over the raw image
  */
-#define ZBSP_MAGIC     (0x5A425350UL)
-#define ZBSP_HDR_BYTES (16UL)
+#define ZBLZ_MAGIC     (0x5A4C425AUL) /* LZMA payload */
+#define ZBSP_MAGIC     (0x5A425350UL) /* RLE payload (fallback) */
+#define ZB_HDR_BYTES   (16UL)
 #define CRC32_POLY     (0xEDB88320UL)
 
 /* The sync word sits within the first 128 bytes of every 7-series
@@ -59,7 +62,7 @@
 #define L1_DCACHE_LINE_BYTES (32UL) /* Cortex-A9 L1 D-cache line */
 static uint32_t dma_stage_buf[DMA_STAGE_BYTES / 4UL] __attribute__((aligned(64)));
 
-struct zbsp_header {
+struct zb_header {
     uint32_t magic;
     uint32_t raw_len;
     uint32_t packed_len;
@@ -366,22 +369,25 @@ static enum pl_status load_raw_bitstream(const uint8_t* img, uint32_t len) {
 }
 
 /**
- * @brief  Parse and validate a ZBSP header; pure memory work, rejects a
- *         malformed blob before any hardware is touched.
- * @param  img Start of the packed image.
- * @param  len Length of the whole image in bytes.
- * @param  hdr Out: the decoded header.
+ * @brief  Parse and validate a packed-image header (ZBLZ or ZBSP - one
+ *         layout); pure memory work, rejects a malformed blob before
+ *         any hardware is touched.
+ * @param  img   Start of the packed image.
+ * @param  len   Length of the whole image in bytes.
+ * @param  magic The magic the image must carry.
+ * @param  hdr   Out: the decoded header.
  * @return PL_OK, or PL_ERR_HDR.
  */
-static enum pl_status parse_zbsp_header(const uint8_t* img, uint32_t len,
-                                        struct zbsp_header* hdr) {
-    struct zbsp_header parsed;
+static enum pl_status parse_zb_header(const uint8_t* img, uint32_t len,
+                                      uint32_t magic,
+                                      struct zb_header* hdr) {
+    struct zb_header parsed;
 
-    if (len < ZBSP_HDR_BYTES) {
+    if (len < ZB_HDR_BYTES) {
         return PL_ERR_HDR;
     }
     memcpy(&parsed, img, sizeof(parsed));
-    if (parsed.magic != ZBSP_MAGIC) {
+    if (parsed.magic != magic) {
         return PL_ERR_HDR;
     }
     /* raw_len must be a non-empty word stream; packed_len must fit in
@@ -391,7 +397,7 @@ static enum pl_status parse_zbsp_header(const uint8_t* img, uint32_t len,
         return PL_ERR_HDR;
     }
     if ((parsed.packed_len == 0UL) ||
-        (parsed.packed_len > (len - ZBSP_HDR_BYTES))) {
+        (parsed.packed_len > (len - ZB_HDR_BYTES))) {
         return PL_ERR_HDR;
     }
     *hdr = parsed;
@@ -399,17 +405,17 @@ static enum pl_status parse_zbsp_header(const uint8_t* img, uint32_t len,
 }
 
 /**
- * @brief  RLE-decode a packed image and stream it to the PCAP, one DMA
+ * @brief  RLE-decode a ZBSP image and stream it to the PCAP, one DMA
  *         per chunk. The DMA moves whole words (a < 4 remainder carries
  *         to the next round) and needs a 64-byte aligned source.
  *         Every marker read, the decoded total and the CRC are checked.
  * @param  img Start of the packed image (header included).
- * @param  hdr Header validated by parse_zbsp_header().
+ * @param  hdr Header validated by parse_zb_header().
  * @return PL_OK, or the reason it failed.
  */
 static enum pl_status load_zbsp_image(const uint8_t* img,
-                                      const struct zbsp_header* hdr) {
-    const uint8_t* payload = img + ZBSP_HDR_BYTES;
+                                      const struct zb_header* hdr) {
+    const uint8_t* payload = img + ZB_HDR_BYTES;
     const uint8_t* payload_end = payload + hdr->packed_len;
     uint8_t* stage = (uint8_t*)dma_stage_buf;
     uint32_t filled = 0UL; /* bytes in the staging buffer (incl. <4 carry) */
@@ -503,11 +509,109 @@ static enum pl_status load_zbsp_image(const uint8_t* img,
     return PL_OK;
 }
 
+/* Sink state for load_zblz_image(): the staging buffer fills through
+   zblz_sink() while lzma_decode_stream() runs. Chunk lengths are whole
+   words (middleware contract), so 'filled' is always word-aligned and
+   the DMA carry logic of the RLE path is not needed. */
+struct zblz_sink {
+    uint8_t* stage;
+    uint32_t filled;      /* bytes staged, awaiting DMA            */
+    uint32_t crc;         /* running CRC over DMA'd words          */
+    int sync_checked;
+    enum pl_status st;    /* first sink-side error sticks          */
+};
+
+/**
+ * @brief  DMA what is staged: sync-word check (first block only),
+ *         cache clean, CRC fold, one PCAP DMA command.
+ */
+static enum pl_status zblz_flush(struct zblz_sink* s) {
+    uint32_t scan;
+    enum pl_status st;
+
+    if (s->filled == 0UL) {
+        return PL_OK;
+    }
+    if (s->sync_checked == 0) {
+        scan = (s->filled < SYNC_SCAN_BYTES) ? s->filled : SYNC_SCAN_BYTES;
+        if (has_pcap_sync_word(s->stage, scan) == 0) {
+            return PL_ERR_NO_SYNC;
+        }
+        s->sync_checked = 1;
+    }
+    clean_l1_dcache(s->stage, s->filled);
+    s->crc = crc32_update(s->crc, s->stage, s->filled);
+    st = pcap_send_block(s->stage, s->filled / 4UL);
+    if (st == PL_OK) {
+        s->filled = 0UL;
+    }
+    return st;
+}
+
+/**
+ * @brief  Sink for lzma_decode_stream(): stage decoded words, flush one
+ *         DMA per full 4 KB block. pcap_send_block() only polls devcfg
+ *         registers - safe to call mid-decode.
+ */
+static void zblz_sink(void* user, const uint8_t* data, uint32_t len) {
+    struct zblz_sink* s = user;
+
+    while ((len != 0UL) && (s->st == PL_OK)) {
+        uint32_t room = DMA_STAGE_BYTES - s->filled;
+        uint32_t take = (room < len) ? room : len;
+
+        memcpy(&s->stage[s->filled], data, take);
+        s->filled += take;
+        data += take;
+        len -= take;
+        if (s->filled == DMA_STAGE_BYTES) {
+            s->st = zblz_flush(s);
+        }
+    }
+}
+
+/**
+ * @brief  LZMA-decode a ZBLZ image and stream it to the PCAP through
+ *         the shared staging buffer. The middleware checks the stream
+ *         shape (end marker, exact lengths); this layer adds the
+ *         sync-word check, the CRC and the DMA flow.
+ * @param  img Start of the packed image (header included).
+ * @param  hdr Header validated by parse_zb_header().
+ * @return PL_OK, or the reason it failed.
+ */
+static enum pl_status load_zblz_image(const uint8_t* img,
+                                      const struct zb_header* hdr) {
+    struct zblz_sink s;
+
+    s.stage = (uint8_t*)dma_stage_buf;
+    s.filled = 0UL;
+    s.crc = 0xFFFFFFFFUL;
+    s.sync_checked = 0;
+    s.st = PL_OK;
+
+    if (lzma_decode_stream(img + ZB_HDR_BYTES, hdr->packed_len, hdr->raw_len,
+                           zblz_sink, &s) != LZMA_STREAM_OK) {
+        return PL_ERR_STREAM;
+    }
+    if (s.st != PL_OK) {
+        return s.st;
+    }
+    s.st = zblz_flush(&s); /* final partial block */
+    if (s.st != PL_OK) {
+        return s.st;
+    }
+    if ((~s.crc) != hdr->crc32) {
+        return PL_ERR_CRC;
+    }
+    return PL_OK;
+}
+
 /**
  * @brief  Push an image over the PCAP bridge; requires pcap_open(). The
- *         first word picks the path - only the packed blob starts with
- *         the "ZBSP" magic.
- * @param  img ZBSP blob (no alignment) or raw bitstream (64-byte aligned).
+ *         first word picks the path - only the packed blobs start with
+ *         a "ZBLZ"/"ZBSP" magic (bitgen images start with 0xFFFFFFFF).
+ * @param  img ZBLZ/ZBSP blob (no alignment) or raw bitstream (64-byte
+ *             aligned).
  * @param  len Multiple of 4.
  * @return PL_OK, or the reason it failed.
  */
@@ -525,10 +629,10 @@ static enum pl_status pl_load_image(const void* img, uint32_t len) {
     }
 
     memcpy(&magic, bytes, sizeof(magic));
-    if (magic == ZBSP_MAGIC) {
-        struct zbsp_header hdr;
+    if ((magic == ZBLZ_MAGIC) || (magic == ZBSP_MAGIC)) {
+        struct zb_header hdr;
 
-        st = parse_zbsp_header(bytes, len, &hdr);
+        st = parse_zb_header(bytes, len, magic, &hdr);
         if (st != PL_OK) {
             return st;
         }
@@ -536,7 +640,8 @@ static enum pl_status pl_load_image(const void* img, uint32_t len) {
         if (st != PL_OK) {
             return st;
         }
-        st = load_zbsp_image(bytes, &hdr);
+        st = (magic == ZBLZ_MAGIC) ? load_zblz_image(bytes, &hdr)
+                                   : load_zbsp_image(bytes, &hdr);
     } else {
         st = pcap_start();
         if (st != PL_OK) {

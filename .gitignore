@@ -9,3 +9,7 @@ __pycache__
 
 # J-Flash 运行日志
 scripts/jflash/*.log
+
+# bitstream
+/source/board/board_fpga_bitstream.c
+/source/board/board_fpga_bitstream.h

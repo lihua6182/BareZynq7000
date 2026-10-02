@@ -95,8 +95,10 @@ cmake --build build                    # 产物 build/source/app/app.{elf,bin,he
 烧写失败（exit 1）会把板子留在坏状态，继续重试无效，先断电再来。
 
 PL 比特流：`source/board/bitstream.bin`（Vivado 原生 .bin）经
-`python tools/convert_bitstream.py <in.bin> <out.c> <out.h>` 生成 `board_fpga_bitstream.c/h`（ZBSP：RLE + CRC32），
+`python tools/convert_bitstream.py <in.bin> <out.c> <out.h>` 生成 `board_fpga_bitstream.c/h`
+（默认 ZBLZ：raw LZMA1 + CRC32，~19.6:1；`--codec rle` 退回 ZBSP：RLE + CRC32，~9.9:1），
 VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不要手工交换。
+解码器在 `source/middleware/lzma/`（公有领域 LZMA SDK + 流式封装，`lzma_stream.c/h`）。
 
 板级代码与镜像数据是分开的两个文件：`board_fpga.c/h` 是手写代码（PCAP 传输 + PL 控制面），
 `board_fpga_bitstream.c/h` 是生成的数据（只有 `fpga_img[]` 与 `FPGA_IMG_LEN`），换比特流只重新生成后者。

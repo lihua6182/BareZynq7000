@@ -6,39 +6,55 @@
      big-endian words (sync bytes AA 99 55 66); the DevC/PCAP path wants
      little-endian (66 55 99 AA) - the "byte swapped .bin" of the
      kernel's zynq-fpga driver.
-  2. RLE-encode in the SEGGER BSP_FPGA.c scheme (7-series images are
-     mostly empty frames and padding, ~32:1):
-       0x00        end of stream
-       0x01..0x3F  literal run of <n> bytes           (n = c0)
-       0x41..0x7F  repeat run of <n> copies of c1     (n = c0 - 0x3F)
-       0x80..0xFF  zero run of <n> bytes              (n = c0 - 0x7F)
-  3. Prepend a 16-byte LE header: magic "ZBSP" (also the load-path
-     selector - bitgen images start with 0xFFFFFFFF padding), raw_len,
-     packed_len, CRC-32 (EDB88320) over the raw image.
+  2. Compress; --codec picks the payload (default lzma):
+       lzma  raw LZMA1 (liblzma FORMAT_RAW): lc=0 lp=0 pb=0, 8 KB
+             dictionary, end marker. ~2x smaller than RLE on 7-series
+             images (RLE can't touch repeated non-zero frames).
+             Firmware decoder: source/middleware/lzma/ (public-domain
+             LZMA SDK LzmaDec + streaming wrapper), params hardcoded to
+             match LZMA_PROPS below.
+       rle   SEGGER BSP_FPGA.c scheme (0x00 end, 0x01..0x3F literal run,
+             0x41..0x7F byte repeat, 0x80.. zero run). Kept as the
+             fallback / debug escape hatch.
+     Both codecs roundtrip-verify the payload in this script before
+     anything is emitted.
+  3. Prepend a 16-byte LE header: 4-byte magic (also the load-path
+     selector - bitgen images start with 0xFFFFFFFF padding; "ZBLZ" =
+     LZMA, "ZBSP" = RLE), raw_len, packed_len, CRC-32 (EDB88320) over
+     the raw image.
   4. Emit board_fpga_bitstream.c/board_fpga_bitstream.h defining the
      packed image as a 4 KB-aligned const array (fpga_img[]). The pair
      is data only - the code that consumes it is board_fpga.c.
 
 Usage:
-  convert_bitstream.py <bitstream.bin> <out.c> <out.h>   pack and emit the pair
-  convert_bitstream.py --stub <out.c> <out.h>            no-bitstream stub
-                                                         (target reports
-                                                         PL_NO_IMAGE)
+  convert_bitstream.py [--codec rle|lzma] <bitstream.bin> <out.c> <out.h>
+  convert_bitstream.py --stub <out.c> <out.h>     no-bitstream stub
+                                                   (target reports
+                                                   PL_NO_IMAGE)
 
 Exits non-zero (with a message) on any input problem.
 """
 
+import argparse
+import lzma
 import os
 import struct
 import sys
 import zlib
 
-MAGIC = 0x5A425350  # "ZBSP"
-HDR_FMT = "<IIII"  # magic, raw_len, packed_len, crc32
 SYNC_BE = b"\xAA\x99\x55\x66"  # bitgen native word order
 SYNC_LE = b"\x66\x55\x99\xAA"  # PCAP word order (what we must produce)
 SYNC_SCAN = 128  # sync word sits inside this window in every bitgen layout
 PER_LINE = 16  # array bytes per source line
+
+# LZMA1 encoder params - a contract with source/middleware/lzma/lzma_stream.h
+# (LZMA_STREAM_* must stay in lockstep). End marker is written.
+LZMA_FILTERS = [{"id": lzma.FILTER_LZMA1, "preset": 9 | lzma.PRESET_EXTREME,
+                 "lc": 0, "lp": 0, "pb": 0, "dict_size": 8192}]
+
+MAGIC_LZMA = 0x5A4C425A  # file bytes read "ZBLZ"
+MAGIC_RLE = 0x5A425350  # file bytes read "ZBSP"
+HDR_FMT = "<IIII"  # magic, raw_len, packed_len, crc32
 
 
 def fail(msg: str) -> "NoReturn":  # type: ignore[valid-type]
@@ -111,6 +127,31 @@ def to_pcap_form(raw: bytes, name: str) -> bytes:
     return b"".join(raw[i:i + 4][::-1] for i in range(0, len(raw), 4))
 
 
+def rle_decode(data: bytes, raw_len: int) -> bytes:
+    """Reference decoder for the self-check - mirrors load_zbsp_image()."""
+    out = bytearray()
+    i = 0
+    while i < len(data):
+        m = data[i]
+        if m == 0:  # end marker
+            i += 1
+            break
+        if m <= 0x3F:
+            out += data[i + 1:i + 1 + m]
+            i += 1 + m
+        elif m <= 0x7F:
+            out += bytes([data[i + 1]]) * (m - 0x3F)
+            i += 2
+        else:
+            out += bytes(m - 0x7F)
+            i += 1
+        if len(out) > raw_len:
+            fail("rle self-check: payload decodes past raw_len")
+    if len(out) != raw_len or i != len(data):
+        fail("rle self-check: decoded length or payload length mismatch")
+    return bytes(out)
+
+
 def rle_encode(data: bytes) -> bytes:
     out = bytearray()
     n = len(data)
@@ -153,24 +194,54 @@ def rle_encode(data: bytes) -> bytes:
     return bytes(out)
 
 
-def main() -> None:
-    if len(sys.argv) == 4 and sys.argv[1] == "--stub":
-        emit_stub(sys.argv[2], sys.argv[3])
-        return
-    if len(sys.argv) != 4:
-        print(f"usage: {sys.argv[0]} [--stub] <out.c> <out.h>  "
-              f"(pack: <bitstream.bin> <out.c> <out.h>)", file=sys.stderr)
-        sys.exit(2)
-    src, out_c, out_h = sys.argv[1], sys.argv[2], sys.argv[3]
+def lzma_encode(data: bytes) -> bytes:
+    packed = lzma.compress(data, format=lzma.FORMAT_RAW, filters=LZMA_FILTERS)
+    back = lzma.decompress(packed, format=lzma.FORMAT_RAW, filters=LZMA_FILTERS)
+    if back != data:
+        fail("lzma self-check: roundtrip mismatch")
+    return packed
 
-    with open(src, "rb") as f:
+
+CODECS = {
+    "lzma": {"magic": MAGIC_LZMA, "encode": lzma_encode,
+             "name": "ZBLZ", "desc": "raw LZMA1 (lc=0 lp=0 pb=0, 8 KB dict, end marker)"},
+    "rle": {"magic": MAGIC_RLE, "encode": rle_encode,
+            "name": "ZBSP", "desc": "SEGGER-style byte RLE"},
+}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="Pack a 7-series Zynq bitstream for the ZBSP/ZBLZ loader.")
+    ap.add_argument("--codec", choices=sorted(CODECS), default="lzma",
+                    help="payload codec (default: %(default)s)")
+    ap.add_argument("--stub", action="store_true",
+                    help="emit the no-bitstream stub pair")
+    ap.add_argument("bitstream", nargs="?", help="input .bin (Vivado or PCAP order)")
+    ap.add_argument("out_c")
+    ap.add_argument("out_h")
+    args = ap.parse_args()
+
+    if args.stub:
+        if args.bitstream is not None:
+            ap.error("--stub takes no bitstream input")
+        emit_stub(args.out_c, args.out_h)
+        return
+    if args.bitstream is None:
+        ap.error("bitstream input required (or --stub)")
+    codec = CODECS[args.codec]
+
+    with open(args.bitstream, "rb") as f:
         raw = f.read()
-    pcap = to_pcap_form(raw, src)
-    packed = rle_encode(pcap)
-    hdr = struct.pack(HDR_FMT, MAGIC, len(pcap), len(packed), zlib.crc32(pcap) & 0xFFFFFFFF)
+    pcap = to_pcap_form(raw, args.bitstream)
+    packed = codec["encode"](pcap)
+    if args.codec == "rle" and rle_decode(packed, len(pcap)) != pcap:
+        fail("rle self-check: decoded image differs from the source")
+    hdr = struct.pack(HDR_FMT, codec["magic"], len(pcap), len(packed),
+                      zlib.crc32(pcap) & 0xFFFFFFFF)
     image = hdr + packed
     # pl_load_image() requires a whole-word image length; the pad bytes sit
-    # past packed_len, which the decoder never reads (pay_end comes from
+    # past packed_len, which the decoder never reads (payload_end comes from
     # the header).
     image += b"\x00" * (-len(image) % 4)
 
@@ -180,15 +251,17 @@ def main() -> None:
         lines.append("    " + ", ".join(f"0x{b:02X}" for b in chunk) + ",")
     body = "\n".join(lines) + "\n"
 
-    comment_c = (f"Packed PL bitstream: SEGGER-style RLE over the PCAP-form (little-endian\n"
-                 f" * word order) image, with a 16-byte ZBSP header (magic, lengths, CRC-32).\n"
-                 f" *   source  {src} : {len(pcap)} bytes\n"
+    comment_c = (f"Packed PL bitstream: {codec['desc']} over the PCAP-form (little-endian\n"
+                 f" * word order) image, with a 16-byte {codec['name']} header (magic, lengths,\n"
+                 f" * CRC-32).\n"
+                 f" *   source  {args.bitstream} : {len(pcap)} bytes\n"
                  f" *   packed  {len(hdr)}-byte header + {len(packed)}-byte payload = {len(image)} bytes ({len(pcap) / len(image):.1f}:1)\n"
                  f" *   crc32 of the unpacked image: 0x{zlib.crc32(pcap) & 0xFFFFFFFF:08X}")
-    comment_h = f"Packed PL bitstream ({len(image)} bytes, ZBSP format)."
-    write_pair(out_c, out_h, body, comment_c, comment_h, len(image), "[FPGA_IMG_LEN]")
+    comment_h = f"Packed PL bitstream ({len(image)} bytes, {codec['name']} format)."
+    write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image), "[FPGA_IMG_LEN]")
 
-    print(f"convert_bitstream.py: {len(pcap)} -> {len(image)} bytes ({len(pcap) / len(image):.1f}:1) -> {out_c}")
+    print(f"convert_bitstream.py: [{args.codec}] {len(pcap)} -> {len(image)} bytes "
+          f"({len(pcap) / len(image):.1f}:1) -> {args.out_c}")
 
 
 if __name__ == "__main__":

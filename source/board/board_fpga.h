@@ -8,11 +8,14 @@
  *   control plane   resets, level shifters, status  (UG585 ch.2, ch.6)
  *
  * The image lives in board_fpga_bitstream.c - generated data, not code;
- * a bitstream swap touches only that pair. Two image forms, picked by
+ * a bitstream swap touches only that pair. Three image forms, picked by
  * the first word:
  *
- *   packed  "ZBSP" magic + header + RLE payload (convert_bitstream.py),
- *           decoded through a staging buffer, one DMA per chunk
+ *   packed  "ZBLZ" magic + header + raw LZMA1 payload
+ *           (convert_bitstream.py default; middleware/lzma decodes,
+ *           ~2x tighter than RLE), or "ZBSP" + RLE payload (fallback);
+ *           both share a 16-byte header (magic/lengths/CRC-32) and
+ *           decode through a staging buffer, one DMA per chunk
  *   direct  raw PCAP-form bitstream, one DMA command (FSBL style)
  *
  * Trap: FPGA_RST_CTRL resets to 0x01F33F0F - all four reset lines
@@ -39,20 +42,20 @@
 /* Outcome of the PL configuration, reported by board_pl_status(). */
 enum pl_status {
     PL_OK = 0,
-    PL_ERR_SRC_ALIGN,    /* image base is not 64-byte aligned      */
-    PL_ERR_LENGTH,       /* byte count is not a multiple of 4      */
-    PL_ERR_NO_SYNC,      /* no PCAP sync word: wrong byte order?   */
-    PL_ERR_HDR,          /* packed header magic/lengths invalid    */
-    PL_ERR_STREAM,       /* RLE payload malformed/length mismatch  */
-    PL_ERR_CRC,          /* decompressed image failed CRC-32       */
-    PL_ERR_NO_POWER,     /* MCTRL[PCFG_POR_B] = 0: PL not powered  */
-    PL_ERR_NOT_RESET,    /* PCFG_INIT did not clear after PROG_B   */
-    PL_ERR_NOT_READY,    /* PCFG_INIT never asserted: PL not ready */
-    PL_ERR_CMD_Q_FULL,   /* DMA command queue stayed full          */
-    PL_ERR_DMA,          /* DMA command / AXI error / FIFO overflow*/
-    PL_ERR_DMA_TIMEOUT,  /* DMA_DONE never arrived                 */
-    PL_ERR_NO_DONE,      /* DMA done, but PL DONE never asserted   */
-    PL_NO_IMAGE,         /* boot(): this build embeds no bitstream */
+    PL_ERR_SRC_ALIGN,   /* image base is not 64-byte aligned      */
+    PL_ERR_LENGTH,      /* byte count is not a multiple of 4      */
+    PL_ERR_NO_SYNC,     /* no PCAP sync word: wrong byte order?   */
+    PL_ERR_HDR,         /* packed header magic/lengths invalid    */
+    PL_ERR_STREAM,      /* RLE payload malformed/length mismatch  */
+    PL_ERR_CRC,         /* decompressed image failed CRC-32       */
+    PL_ERR_NO_POWER,    /* MCTRL[PCFG_POR_B] = 0: PL not powered  */
+    PL_ERR_NOT_RESET,   /* PCFG_INIT did not clear after PROG_B   */
+    PL_ERR_NOT_READY,   /* PCFG_INIT never asserted: PL not ready */
+    PL_ERR_CMD_Q_FULL,  /* DMA command queue stayed full          */
+    PL_ERR_DMA,         /* DMA command / AXI error / FIFO overflow*/
+    PL_ERR_DMA_TIMEOUT, /* DMA_DONE never arrived                 */
+    PL_ERR_NO_DONE,     /* DMA done, but PL DONE never asserted   */
+    PL_NO_IMAGE,        /* boot(): this build embeds no bitstream */
 };
 
 /* Number of PS->PL reset lines (FCLKRESETN[3:0]). */

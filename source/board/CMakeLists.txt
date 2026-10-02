@@ -34,6 +34,7 @@ target_link_libraries("board"
     INTERFACE
     "soc"
     "driver"
+    "lzma"
 )
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/board_fpga_bitstream.c")
