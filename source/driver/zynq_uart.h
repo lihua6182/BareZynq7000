@@ -214,13 +214,4 @@ int uart_try_getc(UART_Type* uart);
 /* Send a NUL-terminated string. */
 void uart_puts(UART_Type* uart, const char* s);
 
-/* Send len bytes (posix write() flavour); returns len, or -1 on NULL. */
-int uart_write(UART_Type* uart, const void* buf, uint32_t len);
-
-/* Print v as unsigned decimal. */
-void uart_putdec(UART_Type* uart, uint32_t v);
-
-/* Print v as 8 hexadecimal digits, upper case, no prefix. */
-void uart_puthex(UART_Type* uart, uint32_t v);
-
 #endif
