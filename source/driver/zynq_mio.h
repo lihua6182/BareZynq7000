@@ -861,5 +861,4 @@ int mio_disable_receiver(uint32_t pad);
 int mio_set_slew_fast(uint32_t pad);
 int mio_set_slew_slow(uint32_t pad);
 
-
 #endif /* ZYNQ_MIO_H */

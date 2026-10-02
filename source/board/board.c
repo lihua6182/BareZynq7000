@@ -34,9 +34,7 @@ void board_init(void) {
     }
 
     if (pl_load_status == PL_OK) {
-        /* FCLK0 = IO PLL / 10 = 100 MHz; clock before reset release.
-           PPC 的 SHF 引擎 SCK = FCLK0 / (2*(1+div))：程序里 div=1，
-           即 SCK = 100/4 = 25 MHz。 */
+        /* FCLK0 = IO PLL / 10 = 100 MHz; clock before reset release. */
         clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true);
 
         /* FCLK0 = IO PLL / 20 = 50 MHz; clock before reset release. */

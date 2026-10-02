@@ -42,17 +42,14 @@ int __io_getchar(void) {
 /* 高速 (USB3300, 512 字节 bulk) / 全速 (64 字节) 两份配置描述符。 */
 static const uint8_t cdc_config_desc_hs[] = {
     USB_CONFIG_DESCRIPTOR_INIT(USB_CONFIG_SIZE, 0x02, 0x01, USB_CONFIG_BUS_POWERED, USBD_MAX_POWER),
-    CDC_ACM_DESCRIPTOR_INIT(0x00, CDC_INT_EP, CDC_OUT_EP, CDC_IN_EP, 512, 0x02)
-};
+    CDC_ACM_DESCRIPTOR_INIT(0x00, CDC_INT_EP, CDC_OUT_EP, CDC_IN_EP, 512, 0x02)};
 
 static const uint8_t cdc_config_desc_fs[] = {
     USB_CONFIG_DESCRIPTOR_INIT(USB_CONFIG_SIZE, 0x02, 0x01, USB_CONFIG_BUS_POWERED, USBD_MAX_POWER),
-    CDC_ACM_DESCRIPTOR_INIT(0x00, CDC_INT_EP, CDC_OUT_EP, CDC_IN_EP, 64, 0x02)
-};
+    CDC_ACM_DESCRIPTOR_INIT(0x00, CDC_INT_EP, CDC_OUT_EP, CDC_IN_EP, 64, 0x02)};
 
 static const uint8_t cdc_device_desc[] = {
-    USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0xEF, 0x02, 0x01, USBD_VID, USBD_PID, 0x0100, 0x01)
-};
+    USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0xEF, 0x02, 0x01, USBD_VID, USBD_PID, 0x0100, 0x01)};
 
 static const uint8_t cdc_device_qualifier[] = {
     0x0a,
@@ -67,30 +64,30 @@ static const uint8_t cdc_device_qualifier[] = {
     0x00,
 };
 
-static const char *cdc_strings[] = {
-    (const char[]){ 0x09, 0x04 }, /* LangID */
-    "BareZynq7000",               /* Manufacturer */
-    "CDC loopback",               /* Product */
-    "000000000001",               /* Serial */
+static const char* cdc_strings[] = {
+    (const char[]){0x09, 0x04}, /* LangID */
+    "BareZynq7000",             /* Manufacturer */
+    "CDC loopback",             /* Product */
+    "000000000001",             /* Serial */
 };
 
-static const uint8_t *device_descriptor_callback(uint8_t speed) {
+static const uint8_t* device_descriptor_callback(uint8_t speed) {
     (void)speed;
     return cdc_device_desc;
 }
 
-static const uint8_t *config_descriptor_callback(uint8_t speed) {
+static const uint8_t* config_descriptor_callback(uint8_t speed) {
     return (speed == USB_SPEED_HIGH) ? cdc_config_desc_hs : cdc_config_desc_fs;
 }
 
-static const uint8_t *device_qualifier_callback(uint8_t speed) {
+static const uint8_t* device_qualifier_callback(uint8_t speed) {
     (void)speed;
     return cdc_device_qualifier;
 }
 
-static const char *string_descriptor_callback(uint8_t speed, uint8_t index) {
+static const char* string_descriptor_callback(uint8_t speed, uint8_t index) {
     (void)speed;
-    if (index >= (sizeof(cdc_strings) / sizeof(char *))) {
+    if (index >= (sizeof(cdc_strings) / sizeof(char*))) {
         return NULL;
     }
     return cdc_strings[index];
@@ -100,8 +97,7 @@ static const struct usb_descriptor cdc_descriptor = {
     .device_descriptor_callback = device_descriptor_callback,
     .config_descriptor_callback = config_descriptor_callback,
     .device_quality_descriptor_callback = device_qualifier_callback,
-    .string_descriptor_callback = string_descriptor_callback
-};
+    .string_descriptor_callback = string_descriptor_callback};
 
 /* 测速缓冲: 放 WB 缓存的低 OCM (.bss, 32 对齐), 一致性由 usb_dcache_* 钩子
  * (L1+PL310 双层维护, 见 zynq_usb.c) 负责。(read=下行收, write=上行发) */
@@ -112,8 +108,8 @@ static USB_MEM_ALIGNX uint8_t cdc_write_buf[4096];
 static volatile uint32_t cdc_rx_bytes;
 static volatile uint32_t cdc_tx_bytes;
 static volatile bool cdc_configured;
-static volatile bool cdc_dtr;    /* SET_CONTROL_LINE_STATE 的 DTR 位 */
-static volatile bool cdc_tx_busy; /* IN 端点有一笔写未完成 */
+static volatile bool cdc_dtr;      /* SET_CONTROL_LINE_STATE 的 DTR 位 */
+static volatile bool cdc_tx_busy;  /* IN 端点有一笔写未完成 */
 static volatile uint8_t cdc_speed; /* USB_SPEED_* */
 
 static void usbd_event_handler(uint8_t busid, uint8_t event) {
@@ -166,13 +162,11 @@ void usbd_cdc_acm_set_dtr(uint8_t busid, uint8_t intf, bool dtr) {
 
 static struct usbd_endpoint cdc_out_ep = {
     .ep_addr = CDC_OUT_EP,
-    .ep_cb = cdc_bulk_out
-};
+    .ep_cb = cdc_bulk_out};
 
 static struct usbd_endpoint cdc_in_ep = {
     .ep_addr = CDC_IN_EP,
-    .ep_cb = cdc_bulk_in
-};
+    .ep_cb = cdc_bulk_in};
 
 static struct usbd_interface intf0;
 static struct usbd_interface intf1;
@@ -192,9 +186,8 @@ static void cdc_loopback_init(void) {
     usbd_add_endpoint(0, &cdc_out_ep);
     usbd_add_endpoint(0, &cdc_in_ep);
     usbd_initialize(0, USB0_BASE, usbd_event_handler);
-    printf("cdc: usb0 up (ULPI MIO28-39, PHY reset MIO47)\n");
 
-    /* 链路健康则静默; 只有 ULPI 无应答才展开诊断 (含极性搜索与重拉栈)。 */
+    /* 链路健康则静默; 只有 ULPI 无应答才展开诊断。 */
     if (usb_phy_link_check() != 0) {
         usb_diag_print();
     }
@@ -229,11 +222,9 @@ static int usb_ulpi_line_print(void) {
  *         bit4 BSE (session end) —— BSV=0 且 BSE=1 就是 PHY 没看到 VBUS;
  *         mio 行是 SLCR 引脚回读 ([15:13]=DIS_RCVR/PU [11:9]=IO [8]=SLEW
  *         [7:2]=L3..L0 复用), clkctl 是 USB0_CLK_CTRL (SRCSEL[6:4]=100 选
- *         MIO ULPI 时钟输入)。链路死时自动做复位极性搜索, 活了就重拉栈。
+ *         MIO ULPI 时钟输入)。链路死时给出方向性提示。
  */
 static void usb_diag_print(void) {
-    static bool polarity_searched;
-
     printf("usb: USBCMD=%08lX USBSTS=%08lX USBMODE=%08lX\n",
            (unsigned long)USB0->USBCMD, (unsigned long)USB0->USBSTS,
            (unsigned long)USB0->USBMODE);
@@ -250,34 +241,8 @@ static void usb_diag_print(void) {
            (unsigned long)SLCR->MIO_PIN_36, (unsigned long)SLCR->MIO_PIN_39,
            (unsigned long)SLCR->USB0_CLK_CTRL);
 
-    if (usb_ulpi_line_print() == 0) {
-        return;
-    }
-
-    if (polarity_searched) {
-        return;
-    }
-    polarity_searched = true;
-
-    /* 链路死: 两种复位极性各试一次。 */
-    switch (usb_phy_reset_search()) {
-        case 0:
-            printf("usb: 默认复位极性 (低电平运行) OK, 链路已通\n");
-            break;
-        case 1:
-            printf("usb: 反向复位极性 OK (高电平运行), 已切换\n");
-            break;
-        case 2:
-            printf("usb: PHY 有应答但 VID 异常 (非 0424)\n");
-            break;
-        default:
-            printf("usb: 两种极性都无应答 -> PHY 供电/晶振/60MHz/布线\n");
-            return;
-    }
-
-    if (usb_ulpi_line_print() == 0) {
-        printf("usb: 链路复活, 重拉设备栈\n");
-        cdc_loopback_init();
+    if (usb_ulpi_line_print() != 0) {
+        printf("usb: PHY 无应答 -> 供电/晶振/60MHz/布线\n");
     }
 }
 
@@ -307,8 +272,6 @@ int main(void) {
     uint32_t t_led = 0u;
     uint32_t t_last = 0u;
 
-    board_init();
-
     irq_init();
     tick_init();
 
@@ -323,11 +286,17 @@ int main(void) {
 
     uart_init(UART0, 115200);
 
+    /* PL 配置放在控制台之后：加载/失败全程可见。board 路径本无 console
+       依赖（反之 console 也不依赖 PL），两向都可换序；tick 已在跑，
+       1ms 中断只会给 PCAP 轮询限值添可忽略的抖动。 */
+    printf("pl: loading...\n");
+    board_init();
+
     printf("pl_status=%u\n", (unsigned)board_pl_status());
 
     memset(cdc_write_buf, 'U', sizeof(cdc_write_buf)); /* 上行图案, 内容无关 */
     cdc_loopback_init();
-    
+
     /* 纯轮询: 续写检查每圈都跑 (上行测速要压满管道), LED/报告按 tick 分频。
      * 主循环不睡眠。 */
     for (;;) {
@@ -344,7 +313,7 @@ int main(void) {
             mio_toggle(LED_MIO);
         }
 
-        if ((tick_get() - t_last) >= 5000u) {
+        if ((tick_get() - t_last) >= 1000u) {
             t_last = tick_get();
             cdc_report();
         }

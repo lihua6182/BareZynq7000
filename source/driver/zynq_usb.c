@@ -3,10 +3,9 @@
  * @brief USB0 (ChipIdea usb2) + 外置 USB3300 ULPI PHY 的底层接线。
  */
 
-#include <stddef.h>
-
 #include "zynq_usb.h"
 
+#include "zynq_cache.h"
 #include "zynq_irq.h"
 #include "zynq_mio.h"
 #include "zynq_soc_ip.h"
@@ -36,20 +35,20 @@ static void usb_irq_entry(void) {
 
 /* USB3300 的 RESET 引脚 (pin 9) 为高有效复位 (Microchip 00001783C 数据手册:
  * "active high transceiver reset", 只复位收发器, 不动 ULPI 接口与寄存器组,
- * 复位完成后自动清除)。MIO47 直连该脚: 高 = 复位, 低 = 运行。 */
-static bool usb_phy_reset_release_level = false;
+ * 复位完成后自动清除)。MIO47 直连该脚: 高 = 复位, 低 = 运行。极性是本板
+ * 定型事实, 不做运行时搜索。 */
 
 /**
- * @brief  脉冲 USB3300 的 RESET# (MIO 47): 拉低 10 ms 再放高, 等 PHY 起振。
- * @note   依赖 tick_mdelay() (tick_init() 已跑); 放高后 ULPI CLK (60MHz)
- *         需要数十 ms 才稳定, 之后控制器寄存器才可访问。
+ * @brief  脉冲 USB3300 的 RESET (MIO 47): 拉高 10 ms 复位, 放低运行, 再等
+ *         50 ms ULPI CLK (60MHz) 起振——之后控制器寄存器才可访问。
+ * @note   依赖 tick_mdelay() (tick_init() 已跑)。
  */
 void usb_phy_reset_pulse(void) {
     mio_enable_clock();
     mio_set_function(USB_PHY_RESET_MIO, MIO47_GPIO);
-    mio_direction_output(USB_PHY_RESET_MIO, !usb_phy_reset_release_level);
+    mio_direction_output(USB_PHY_RESET_MIO, 1u); /* 复位 (高有效) */
     tick_mdelay(10);
-    mio_set_value(USB_PHY_RESET_MIO, usb_phy_reset_release_level);
+    mio_set_value(USB_PHY_RESET_MIO, 0u); /* 运行 (低) */
     tick_mdelay(50);
 }
 
@@ -73,33 +72,6 @@ int usb_phy_link_check(void) {
         return 0;
     }
     return (vh == 0x24u && vl == 0x04u) ? 0 : 1;
-}
-
-/**
- * @brief  两种复位极性各试一次, 找到能让 ULPI 应答的那种并记住。
- *         先试当前默认 (低电平释放 = 本板实测), 无应答再试反向。
- * @return 0 默认极性通; 1 反向极性通 (已切换); 2 有应答但 VID 异常
- *         (已保留能应答的极性); -1 两种都无应答 (PHY 供电/晶振/布线)。
- */
-int usb_phy_reset_search(void) {
-    int rc[2];
-    int i;
-
-    for (i = 0; i < 2; i++) {
-        usb_phy_reset_pulse();
-        rc[i] = usb_phy_link_check();
-        if (rc[i] == 0) {
-            return i;
-        }
-        usb_phy_reset_release_level = !usb_phy_reset_release_level;
-    }
-
-    /* 两种都试完仍无正常 VID: 保留能应答的那种; 全死则回板级默认。 */
-    if (rc[0] < 0 && rc[1] < 0) {
-        usb_phy_reset_release_level = false;
-        return -1;
-    }
-    return 2;
 }
 
 /**
@@ -175,66 +147,14 @@ void usb_dc_low_level_deinit(uint8_t busid) {
 /* ------------------------------------------------------------------ */
 
 /*
- * Zynq-7000 的 USB DMA 挂在中央互连上, 不过 CPU 的 PL310 —— 所以对放在 WB
- * 缓存区 (低 OCM) 的缓冲做一致性, 必须 L1 (by MVA) 与 L2 (PL310 by PA) 双层
- * 维护, 只做 L1 会把行推进 L2 而 DMA 看不到。PA == VA (恒等映射), 可直接
- * 混用。行宽均为 32B。
- */
-#define USB_CACHE_LINE (32u)
-
-static uint32_t usb_cache_line_first(uintptr_t addr) {
-    return (uint32_t)addr & ~(USB_CACHE_LINE - 1u);
-}
-
-static uint32_t usb_cache_line_end(uintptr_t addr, size_t size) {
-    return (uint32_t)((addr + size + USB_CACHE_LINE - 1u) & ~(USB_CACHE_LINE - 1u));
-}
-
-/**
- * @brief  清写 (CPU -> 内存): L1 clean MVA 推入 L2, 再 L2 clean PA 落内存。
- *         发送方向, usbd_ep_start_write() 在挂 DMA 前调用。
+ * USB DMA 走中央互连、不嗅探 PL310, 一致性是 zynq_cache 的双层维护;
+ * 这里只做名字/签名的适配。调用点 (chipidea port): usbd_ep_start_write
+ * -> clean, usbd_ep_start_read 与 RX 完成中断 -> invalidate。
  */
 void usb_dcache_clean(uintptr_t addr, size_t size) {
-    uint32_t p = usb_cache_line_first(addr);
-    uint32_t end = usb_cache_line_end(addr, size);
-
-    for (; p < end; p += USB_CACHE_LINE) {
-        L1C_CleanDCacheMVA((void*)(uintptr_t)p);
-        L2C_310->CLEAN_LINE_PA = p;
-    }
-    L2C_310->CACHE_SYNC = 0u;
-    __DSB();
+    cache_clean((const void*)(uintptr_t)addr, size);
 }
 
-/**
- * @brief  失效 (丢弃 CPU 侧行): 接收方向, usbd_ep_start_read() 挂 DMA 前与
- *         完成中断里调用, 让 CPU 后续读命中 DMA 写入的内存。
- * @note   两层都按"丢弃"处理 (不回写), 缓冲属 DMA 专用, CPU 不得持有未保存
- *         数据后指望它还在。
- */
 void usb_dcache_invalidate(uintptr_t addr, size_t size) {
-    uint32_t p = usb_cache_line_first(addr);
-    uint32_t end = usb_cache_line_end(addr, size);
-
-    for (; p < end; p += USB_CACHE_LINE) {
-        L1C_InvalidateDCacheMVA((void*)(uintptr_t)p);
-        L2C_310->INV_LINE_PA = p;
-    }
-    L2C_310->CACHE_SYNC = 0u;
-    __DSB();
-}
-
-/**
- * @brief  清写并失效: clean + invalidate 的组合。
- */
-void usb_dcache_flush(uintptr_t addr, size_t size) {
-    uint32_t p = usb_cache_line_first(addr);
-    uint32_t end = usb_cache_line_end(addr, size);
-
-    for (; p < end; p += USB_CACHE_LINE) {
-        L1C_CleanInvalidateDCacheMVA((void*)(uintptr_t)p);
-        L2C_310->CLEAN_INV_LINE_PA = p;
-    }
-    L2C_310->CACHE_SYNC = 0u;
-    __DSB();
+    cache_invalidate((const void*)(uintptr_t)addr, size);
 }

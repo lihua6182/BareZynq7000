@@ -5,7 +5,7 @@
 
 /*
  * USB0 底层接线: PS 的 USB 控制器 (ChipIdea usb2 2.20a, UG585 ch.15) 经
- * MIO 28..39 的 ULPI 口外接 USB3300 PHY, PHY 复位脚是 MIO 47 (低有效)。
+ * MIO 28..39 的 ULPI 口外接 USB3300 PHY, PHY 复位脚是 MIO 47 (高有效复位, 运行电平低 —— 本板定型事实)。
  *
  * 设备协议栈是 middleware/cherryusb, 它的板级钩子 usb_dc_low_level_init()/
  * usb_dc_low_level_deinit() 在本文件实现 (引脚/时钟/PHY/GIC 一站式拉起)。
@@ -25,7 +25,5 @@ void usb_phy_reset_pulse(void);
 int usb_ulpi_read_reg(uint8_t addr, uint8_t* val);
 
 int usb_phy_link_check(void);
-
-int usb_phy_reset_search(void);
 
 #endif /* ZYNQ_USB_H */
