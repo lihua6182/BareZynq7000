@@ -3,6 +3,8 @@
  * @brief USB0 (ChipIdea usb2) + 外置 USB3300 ULPI PHY 的底层接线。
  */
 
+#include <stddef.h>
+
 #include "zynq_usb.h"
 
 #include "zynq_irq.h"
@@ -166,4 +168,73 @@ void usb_dc_low_level_deinit(uint8_t busid) {
 
     irq_disable(Usb0_IRQn);
     irq_detach(Usb0_IRQn);
+}
+
+/* ------------------------------------------------------------------ */
+/* CherryUSB dcache 钩子 (CONFIG_USB_DCACHE_ENABLE, 见 common/usb_dcache.h) */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Zynq-7000 的 USB DMA 挂在中央互连上, 不过 CPU 的 PL310 —— 所以对放在 WB
+ * 缓存区 (低 OCM) 的缓冲做一致性, 必须 L1 (by MVA) 与 L2 (PL310 by PA) 双层
+ * 维护, 只做 L1 会把行推进 L2 而 DMA 看不到。PA == VA (恒等映射), 可直接
+ * 混用。行宽均为 32B。
+ */
+#define USB_CACHE_LINE (32u)
+
+static uint32_t usb_cache_line_first(uintptr_t addr) {
+    return (uint32_t)addr & ~(USB_CACHE_LINE - 1u);
+}
+
+static uint32_t usb_cache_line_end(uintptr_t addr, size_t size) {
+    return (uint32_t)((addr + size + USB_CACHE_LINE - 1u) & ~(USB_CACHE_LINE - 1u));
+}
+
+/**
+ * @brief  清写 (CPU -> 内存): L1 clean MVA 推入 L2, 再 L2 clean PA 落内存。
+ *         发送方向, usbd_ep_start_write() 在挂 DMA 前调用。
+ */
+void usb_dcache_clean(uintptr_t addr, size_t size) {
+    uint32_t p = usb_cache_line_first(addr);
+    uint32_t end = usb_cache_line_end(addr, size);
+
+    for (; p < end; p += USB_CACHE_LINE) {
+        L1C_CleanDCacheMVA((void*)(uintptr_t)p);
+        L2C_310->CLEAN_LINE_PA = p;
+    }
+    L2C_310->CACHE_SYNC = 0u;
+    __DSB();
+}
+
+/**
+ * @brief  失效 (丢弃 CPU 侧行): 接收方向, usbd_ep_start_read() 挂 DMA 前与
+ *         完成中断里调用, 让 CPU 后续读命中 DMA 写入的内存。
+ * @note   两层都按"丢弃"处理 (不回写), 缓冲属 DMA 专用, CPU 不得持有未保存
+ *         数据后指望它还在。
+ */
+void usb_dcache_invalidate(uintptr_t addr, size_t size) {
+    uint32_t p = usb_cache_line_first(addr);
+    uint32_t end = usb_cache_line_end(addr, size);
+
+    for (; p < end; p += USB_CACHE_LINE) {
+        L1C_InvalidateDCacheMVA((void*)(uintptr_t)p);
+        L2C_310->INV_LINE_PA = p;
+    }
+    L2C_310->CACHE_SYNC = 0u;
+    __DSB();
+}
+
+/**
+ * @brief  清写并失效: clean + invalidate 的组合。
+ */
+void usb_dcache_flush(uintptr_t addr, size_t size) {
+    uint32_t p = usb_cache_line_first(addr);
+    uint32_t end = usb_cache_line_end(addr, size);
+
+    for (; p < end; p += USB_CACHE_LINE) {
+        L1C_CleanInvalidateDCacheMVA((void*)(uintptr_t)p);
+        L2C_310->CLEAN_INV_LINE_PA = p;
+    }
+    L2C_310->CACHE_SYNC = 0u;
+    __DSB();
 }

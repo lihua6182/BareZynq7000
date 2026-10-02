@@ -103,10 +103,10 @@ static const struct usb_descriptor cdc_descriptor = {
     .string_descriptor_callback = string_descriptor_callback
 };
 
-/* 测速缓冲: 落 OCM 高 64KB 非缓存区 (.no_cache_ram), 控制器 DMA 直接可达,
- * 不经任何 cache, 无需软件维护一致性。(read=下行收, write=上行发) */
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t cdc_read_buf[4096];
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t cdc_write_buf[4096];
+/* 测速缓冲: 放 WB 缓存的低 OCM (.bss, 32 对齐), 一致性由 usb_dcache_* 钩子
+ * (L1+PL310 双层维护, 见 zynq_usb.c) 负责。(read=下行收, write=上行发) */
+static USB_MEM_ALIGNX uint8_t cdc_read_buf[4096];
+static USB_MEM_ALIGNX uint8_t cdc_write_buf[4096];
 
 /* 回环状态 (IRQ 写, main 读)。 */
 static volatile uint32_t cdc_rx_bytes;
@@ -328,7 +328,6 @@ int main(void) {
     memset(cdc_write_buf, 'U', sizeof(cdc_write_buf)); /* 上行图案, 内容无关 */
     cdc_loopback_init();
     
-
     /* 纯轮询: 续写检查每圈都跑 (上行测速要压满管道), LED/报告按 tick 分频。
      * 主循环不睡眠。 */
     for (;;) {
