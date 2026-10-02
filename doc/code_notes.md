@@ -125,6 +125,32 @@ QSPI ref = IO PLL/5 = 200 MHz、SCLK = 100 MHz、LPBK_DLY_ADJ[USE_LPBK]=1 内部
 
 ---
 
+## zynq_cache（L1/PL310 缓存维护）
+
+### 两个 DMA 域，维护深度不同
+
+- **中央互连主设备**（USB/ENET/SD/DMA 控制器）：不嗅探 PL310，CPU 写的数据必须
+  用 `cache_clean/flush` 双层清写真正落到 OCM/DDR；读回方向 `cache_invalidate`
+  双层丢弃（丢弃语义，只给 DMA 专用缓冲）。
+- **ACP 主设备**（DevC/PCAP）：硬件在 SCU/ACP 处与 L2 一致，`cache_clean_acp`
+  只清 L1 即可——board_fpga 的 staging buffer 一直就是这个语义（原
+  clean_l1_dcache）。
+
+### L1→L2 的顺序坑（GLM5.3-flash 踩过）
+
+ARMv7-A 上 L1 clean（by MVA）指令返回 ≠ 数据已落到 L2。逐行交错执行
+"L1 clean → L2 clean PA" 没有屏障，L2 的维护寄存器写（device 写）可以先于
+L1 推来的数据执行，L2 清到旧行 → DMA 读到旧数据。正确序列 =
+**L1 循环 → DSB → L2 循环 → CACHE_SYNC → DSB**（Linux `__dma_map_area` →
+`outer_*_range` 同款）。这 bug 用常数 'U' 测速图案是测不出来的（旧=新），
+变化数据（描述符/真实载荷）才会偶发出错。
+
+行宽 L1 = PL310 = 32B（与 `CONFIG_USB_ALIGN_SIZE=32` 同源）。CherryUSB 的
+`usb_dcache_*` 钩子保留在 zynq_usb.c——那是 middleware 的名字契约，
+只做到 `cache_*` 的适配。
+
+---
+
 ## board_fpga（PL 配置/PCAP）
 
 ### 4KB 规则的正确理解
@@ -170,6 +196,14 @@ ZBSP 路径的 staging buffer 固定 64B 对齐、每块不跨页。
 且寄存器只有 bit0-3 可用。不清零的表象是"配置成功"（PCAP DONE 照样断言），但 GP0
 上任何访问无响应——2026-09-29 上板排雷的主坑。FSBL 在配完 PL 后清整个寄存器，
 本工程同序：`fpga_load() → clock_fclk_config() → fpga_reset_release_all()`。
+
+### main 的调用顺序（2026-10-02 起：console 先于 PL）
+
+`board_init()` 原来排在 main 最前（PL 加载在静默期完成，失败要等控制台起来
+才看到 pl_status）。现挪到 `uart_init` 之后、前加一行 printf——加载/失败
+全程可见。依据：board 路径无 console 依赖，console 也不依赖 PL，双向独立；
+tick 届时已在跑，1ms 中断只给 PCAP 轮询限值（强序总线周期数）添可忽略抖动。
+soc_init 内部五步死顺序与此无关，未动。
 
 ### 轮询上限的量纲
 

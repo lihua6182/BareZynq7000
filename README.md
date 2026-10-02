@@ -124,6 +124,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   | `mio_` | `zynq_mio.h` | PS 引脚域：MIO pad/pinmux（SLCR，ch.6，pad 0..53）+ GPIO 控制器（ch.14，pin 0..117 含 EMIO），一个模块两半（pin n == pad n, n<54） |
   | `uart_` | `zynq_uart.h` | Cadence UART |
   | `usb_` | `zynq_usb.h` | USB0 底层接线（ChipIdea usb2 + USB3300 ULPI，CherryUSB 钩子） |
+  | `cache_` | `zynq_cache.h` | L1/PL310 缓存维护（DMA 一致性：中央互连双层 / ACP 单层）|
   | `clock_` | `zynq_clock.h` | 时钟树读回（`clock_freqs_get`）+ PL 时钟路由（`clock_fclk_config` / `clock_fclk_enable` / `clock_fclk_freq_get`） |
   | `irq_` | `zynq_irq.h` | GIC 分发 |
   | `tick_` | `zynq_tick.h` | TTC0 毫秒 tick |
