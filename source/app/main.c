@@ -11,6 +11,7 @@
 #include "board.h"
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
+#include "zynq_dma.h"
 #include "zynq_soc.h"
 #include "zynq_usb.h"
 
@@ -101,8 +102,8 @@ static const struct usb_descriptor cdc_descriptor = {
 
 /* 测速缓冲: 放 WB 缓存的低 OCM (.bss, 32 对齐), 一致性由 usb_dcache_* 钩子
  * (L1+PL310 双层维护, 见 zynq_usb.c) 负责。(read=下行收, write=上行发) */
-static USB_MEM_ALIGNX uint8_t cdc_read_buf[4096];
-static USB_MEM_ALIGNX uint8_t cdc_write_buf[4096];
+static USB_MEM_ALIGNX uint8_t cdc_read_buf[1024 * 4];
+static USB_MEM_ALIGNX uint8_t cdc_write_buf[1024 * 4];
 
 /* 回环状态 (IRQ 写, main 读)。 */
 static volatile uint32_t cdc_rx_bytes;
@@ -187,8 +188,18 @@ static void cdc_loopback_init(void) {
     usbd_add_endpoint(0, &cdc_in_ep);
     usbd_initialize(0, USB0_BASE, usbd_event_handler);
 
-    /* 链路健康则静默; 只有 ULPI 无应答才展开诊断。 */
-    if (usb_phy_link_check() != 0) {
+    /* 链路健康则静默; 只有 ULPI 无应答才展开诊断 (含极性搜索与重拉栈)。
+     * 冷掉电后晶振/ULPI 时钟爬坡有离散性, PHY 偶尔要再等几十 ms 才应答
+     * 第一笔 viewport 读 —— 先重试几轮, 避免误报诊断 (实测枚举不受影响)。 */
+    int link_ok = 0;
+    for (int i = 0; i < 5; i++) {
+        if (usb_phy_link_check() == 0) {
+            link_ok = 1;
+            break;
+        }
+        tick_mdelay(20);
+    }
+    if (!link_ok) {
         usb_diag_print();
     }
 }
@@ -264,6 +275,114 @@ static void cdc_report(void) {
     last_tx = tx;
 }
 
+/* ------------------------------------------------------------------ */
+/* DMAC (PL330) 自检: nocache 缓冲搬运校验, 结果存全局 (J-Link 可读)。 */
+/* ------------------------------------------------------------------ */
+
+#define DMA_TEST_STATUS_IDLE 0u
+#define DMA_TEST_STATUS_PASS 1u
+#define DMA_TEST_STATUS_FAIL 2u
+
+/* 自检结果放非缓存区: J-Link 经 DAP 读它时不会被 CPU L1 脏行挡住。 */
+/* 初值不写 = NOLOAD 段不支持; dma_selftest() 入口统一置 IDLE。 */
+static volatile uint32_t dma_test_status __attribute__((section(".no_cache_ram")));
+static volatile uint32_t dma_test_fail_step __attribute__((section(".no_cache_ram")));
+
+/**
+ * @brief  dma_memcpy 分相自检 (排障用):
+ *         A: 高 OCM 非缓存 -> 高 OCM 非缓存, 4 KiB (原始路径)
+ *         B: 低 OCM 缓存区 -> 低 OCM 缓存区, 4 KiB (软件 cache 维护)
+ *         C: 低 OCM 1044 B (16 块 + 20B 尾巴)
+ *         失败相位记入 dma_test_fail_step (A/B/C + dma_last_ftc 现场码),
+ *         USB 上行流字符编码结果 ('P' 全过, 'A'/'B'/'C' 首个失败相)。
+ */
+extern uint32_t dma_last_ftc;
+extern uint32_t dma_last_fsrc;
+extern void usb_dcache_clean(uintptr_t addr, size_t size);
+extern void usb_dcache_invalidate(uintptr_t addr, size_t size);
+
+static __attribute__((section(".no_cache_ram"))) uint32_t dma_test_src[1024];
+static __attribute__((section(".no_cache_ram"))) uint32_t dma_test_dst[1024];
+static uint32_t dma_test_src_low[1024]; /* 低 OCM (WB 缓存) */
+static uint32_t dma_test_dst_low[1024];
+
+static volatile uint32_t dma_test_mask; /* bit0=A(bit高OCM) bit1=B(低OCM) bit2=C(尾) */
+
+static void dma_selftest(void) {
+    uint32_t i;
+    uint32_t mask = 0u;
+
+    dma_test_status = DMA_TEST_STATUS_IDLE;
+    dma_test_fail_step = 0u;
+
+    if (dma_init() != 0) {
+        dma_test_fail_step = 0xE0u;
+        dma_test_mask = 0x8u;
+        dma_test_status = DMA_TEST_STATUS_FAIL;
+        return;
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        dma_test_src[i] = 0xA5A50000u + i;
+        dma_test_dst[i] = 0u;
+    }
+    if (dma_memcpy(dma_test_dst, dma_test_src, 4096u) != 0) {
+        mask |= 1u;
+        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xA00u + (dma_last_ftc >> 16);
+    } else {
+        for (i = 0; i < 1024u; i++) {
+            if (dma_test_dst[i] != (0xA5A50000u + i)) {
+                mask |= 1u;
+                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xA10u + i;
+                break;
+            }
+        }
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        dma_test_src_low[i] = 0x3C3C0000u + i;
+        dma_test_dst_low[i] = 0u;
+    }
+    usb_dcache_clean((uintptr_t)dma_test_src_low, sizeof(dma_test_src_low));
+    usb_dcache_invalidate((uintptr_t)dma_test_dst_low, sizeof(dma_test_dst_low));
+    if (dma_memcpy(dma_test_dst_low, dma_test_src_low, 4096u) != 0) {
+        mask |= 2u;
+        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xB00u + (dma_last_ftc >> 16);
+    } else {
+        usb_dcache_invalidate((uintptr_t)dma_test_dst_low, sizeof(dma_test_dst_low));
+        for (i = 0; i < 1024u; i++) {
+            if (dma_test_dst_low[i] != (0x3C3C0000u + i)) {
+                mask |= 2u;
+                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xB10u + i;
+                break;
+            }
+        }
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        dma_test_src_low[i] = 0x5A5A0000u + i;
+        dma_test_dst_low[i] = 0u;
+    }
+    usb_dcache_clean((uintptr_t)dma_test_src_low, 1044u);
+    usb_dcache_invalidate((uintptr_t)dma_test_dst_low, 1044u);
+    if (dma_memcpy(dma_test_dst_low, dma_test_src_low, 1044u) != 0) {
+        mask |= 4u;
+        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xC00u + (dma_last_ftc >> 16);
+    } else {
+        usb_dcache_invalidate((uintptr_t)dma_test_dst_low, 1044u);
+        for (i = 0; i < (1044u / 4u); i++) {
+            if (dma_test_dst_low[i] != (0x5A5A0000u + i)) {
+                mask |= 4u;
+                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xC10u + i;
+                break;
+            }
+        }
+    }
+
+    dma_test_mask = mask;
+    dma_test_status = (mask == 0u) ? DMA_TEST_STATUS_PASS : DMA_TEST_STATUS_FAIL;
+}
+
 /**
  * @brief  Application entry point.
  * @return Does not return.
@@ -271,9 +390,6 @@ static void cdc_report(void) {
 int main(void) {
     uint32_t t_led = 0u;
     uint32_t t_last = 0u;
-
-    irq_init();
-    tick_init();
 
     mio_set_function(LED_MIO, MIO24_GPIO);
     mio_set_function(11, MIO11_UART0);
@@ -292,8 +408,14 @@ int main(void) {
     printf("pl: loading...\n");
     board_init();
 
-    printf("pl_status=%u\n", (unsigned)board_pl_status());
+    dma_selftest();
+    printf("dma: selftest %s\n",
+           dma_test_status == DMA_TEST_STATUS_PASS ? "pass" : "FAIL");
+    if (dma_test_status == DMA_TEST_STATUS_FAIL) {
+        printf("dma: fail_step=%lu\n", (unsigned long)dma_test_fail_step);
+    }
 
+    printf("pl_status=%u\n", (unsigned)board_pl_status());
     memset(cdc_write_buf, 'U', sizeof(cdc_write_buf)); /* 上行图案, 内容无关 */
     cdc_loopback_init();
 
