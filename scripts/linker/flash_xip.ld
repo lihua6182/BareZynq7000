@@ -152,32 +152,37 @@ SECTIONS
         _ebss = .;
     } > RAM
 
+    /* Exception stacks anchored at the top of RAM, growing down. */
+    __stack_svc_end__   = __ram_end__;
+    __stack_svc_start__ = __stack_svc_end__ - 0x400;   /* 1 KiB */
+
+    __stack_irq_end__   = __stack_svc_start__;
+    __stack_irq_start__ = __stack_irq_end__ - 0x400;   /* 1 KiB */
+
+    __stack_und_end__   = __stack_irq_start__;
+    __stack_und_start__ = __stack_und_end__ - 0x100;   /* 256 B */
+
+    __stack_fiq_end__   = __stack_und_start__;
+    __stack_fiq_start__ = __stack_fiq_end__ - 0x100;   /* 256 B */
+
+    __stack_abt_end__   = __stack_fiq_start__;
+    __stack_abt_start__ = __stack_abt_end__ - 0x100;   /* 256 B */
+
+    /* Heap fills everything between .bss and the stacks: the LZMA working
+       memory (dict window + probs, ~38 KiB) is malloc'd from it while
+       board_init() loads the PL and freed right after. */
     __heap_start__      = ALIGN(_ebss, 8);
-    __heap_end__        = __heap_start__ + 0x1000;     /* 4 KiB: newlib stdio buffers */
-    
-    __stack_abt_start__ = ALIGN(__heap_end__, 8);
-    __stack_abt_end__   = __stack_abt_start__ + 0x100; /* 256 B */
-    
-    __stack_fiq_start__ = ALIGN(__stack_abt_end__, 8);
-    __stack_fiq_end__   = __stack_fiq_start__ + 0x100; /* 256 B */
-
-    __stack_und_start__ = ALIGN(__stack_fiq_end__, 8);
-    __stack_und_end__   = __stack_und_start__ + 0x100; /* 256 B */
-
-    __stack_irq_start__ = ALIGN(__stack_und_end__, 8);
-    __stack_irq_end__   = __stack_irq_start__ + 0x400; /* 1 KiB */
-
-    __stack_svc_start__ = ALIGN(__stack_irq_end__, 8);
-    __stack_svc_end__   = __stack_svc_start__ + 0x400; /* 1 KiB */ 
+    __heap_end__        = __stack_abt_start__;
 
     __stack_end__ = __ram_end__;
     _estack       = __stack_end__;
     _end          = __heap_start__;
-    
+
     /* Link-time sanity checks. */
     ASSERT(SIZEOF(.boot_header) <= 0x8C0,                   ".boot_header overlaps the 0x8C0 XIP payload boundary")
     ASSERT(ADDR(.vectors) == ORIGIN(FLASH) + 0x8C0,         ".vectors must start at 0xFC0008C0")
     ASSERT((ADDR(.vectors) & 0x1F) == 0,                    ".vectors must be 32-byte aligned")
+    ASSERT(__heap_end__ - __heap_start__ >= 0xC000,         "heap < 48 KiB: no room for the boot LZMA allocation")
     ASSERT(__stack_svc_end__ <= __ram_end__,                "OCM overflow: heap/exception stacks exceed RAM")
 
     /DISCARD/ :

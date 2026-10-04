@@ -6,7 +6,9 @@
 #include <errno.h>
 #include <stdint.h>
 
-/* Heap region reserved by flash_xip.ld, bounded by the exception stacks. */
+/* Heap region reserved by flash_xip.ld: everything between .bss and the
+   exception stacks. Large by design - the boot-time LZMA decode (~38 KiB
+   working set) is malloc'd from it and freed after the PL loads. */
 extern uint32_t __heap_start__;
 extern uint32_t __heap_end__;
 

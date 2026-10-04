@@ -13,14 +13,12 @@
  * LZMA_STREAM_DICT_BYTES below. Changing one side without the other
  * fails every load loudly (LZMA_STREAM_DATA), never silently.
  *
- * Working memory (static, single loader context):
- *   probs   5504 B   2752 CLzmaProb = 1984 base + 0x300 literals
- *                    (lc=0), handed to LzmaDec through a one-shot
- *                    arena allocator so the SDK checks the size
- *   dic     32 KB    decode window; when it fills, the last
- *                   LZMA_STREAM_DICT_BYTES slide to the front - the
- *                    longest match the encoder can emit, so every
- *                    distance still resolves inside the buffer
+ * Working memory: heap-allocated per call and freed on every exit
+ *   (probs 5504 B via the SDK's own size check, dic 32 KB window; the
+ *   window slides its last LZMA_STREAM_DICT_BYTES to the front when
+ *   full - the longest match the encoder can emit, so every distance
+ *   still resolves inside the buffer). Runtime fpga_load() may decode
+ *   again whenever the heap has ~38 KiB free.
  *
  * Sink contract: called in decode order with whole-word chunks
  * (len % 4 == 0), at most LZMA_STREAM_WIN_BYTES per call; the total
