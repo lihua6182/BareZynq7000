@@ -115,7 +115,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   数量宏统一 `*_COUNT`（`MIO_PIN_COUNT` 118 / `MIO_PAD_COUNT` 54 / `FPGA_RESET_LINE_COUNT` 4 / `IRQ_ID_COUNT` 96），
   带单位的量写进名字（`tick_ms`、`ref_hz`、`byte_offset`、`word_count`），
   寄存器值参数跟寄存器同名（`uart_set_baud_gen(uart, baudgen)`、`uart_set_baud_div(uart, bauddiv)`），
-  寄存器与位域名保持 UG585 原名（`zynq_soc_ip.h`，改名会丢掉"查手册即所得"）。
+  寄存器与位域名保持 UG585 原名（`zynq_soc.h`，改名会丢掉"查手册即所得"）。
 - **公共 API 的第一个词必须是模块名**（2026-09-30 用户定）：同一个头文件里的接口只能有一个模块词，
   调用点不看头文件也能知道它属于哪一层。当前的模块词表：
 
@@ -124,6 +124,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   | `mio_` | `zynq_mio.h` | PS 引脚域：MIO pad/pinmux（SLCR，ch.6，pad 0..53）+ GPIO 控制器（ch.14，pin 0..117 含 EMIO），一个模块两半（pin n == pad n, n<54） |
   | `uart_` | `zynq_uart.h` | Cadence UART |
   | `usb_` | `zynq_usb.h` | USB0 底层接线（ChipIdea usb2 + USB3300 ULPI，CherryUSB 钩子） |
+  | `dma_` | `zynq_dma.h` | PS DMAC（PL330）微码式内存搬运，轮询完成 |
   | `cache_` | `zynq_cache.h` | L1/PL310 缓存维护（DMA 一致性：中央互连双层 / ACP 单层）|
   | `clock_` | `zynq_clock.h` | 时钟树读回（`clock_freqs_get`）+ PL 时钟路由（`clock_fclk_config` / `clock_fclk_enable` / `clock_fclk_freq_get`） |
   | `irq_` | `zynq_irq.h` | GIC 分发 |

@@ -12,7 +12,7 @@ source/board/   board.c/h（板级 bring-up）、board_fpga.c/h（PL 代码，�
                 board_fpga_bitstream.c/h（PL 镜像，生成物）、bitstream.bin
 source/driver/  zynq_mio.c/h（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart.c/h（**只留 PS 外设**）
 source/soc/     zynq_startup.s、zynq_soc.c、zynq_clock.c/h、zynq_irq.c/h、zynq_tick.c/h、
-                zynq_boot_header.c、zynq_soc_ip.h、zynq_cmsis.h、zynq_common.h、cmsis/（Core(A) 子集）
+                zynq_boot_header.c、zynq_soc.h、zynq_cmsis.h、zynq_common.h、cmsis/（Core(A) 子集）
 doc/            code_notes.md（源码"为什么这么写"的归档）+ UG585/UG1283 原文（PDF 被 .gitignore 排除）
 ```
 - 前三者在 CMake 里都是 `INTERFACE` 库（只传源文件与包含路径，不产生归档），只有 `app` 是真目标。
@@ -46,8 +46,8 @@ doc/            code_notes.md（源码"为什么这么写"的归档）+ UG585/UG
 - **注释写给人看**：一句话 `@brief` + 必要 `@param/@return`，硬约束一行 `@note`；
   背景/取舍/排雷长文一律放 **`doc/code_notes.md`**（与本 memory 互补：code_notes 记"为什么这么写"，memory 记"当时怎么踩的"）。
   `.c` 函数注释保持 Doxygen 骨架（`@brief`/`@param`/`@return`），每文件带 `@file`。
-  `zynq_soc_ip.h` 的寄存器字段注释与 vendored CMSIS 不动（UG585 原文对照）；生成物头部由 `convert_bitstream.py` 产出。
-- `zynq_soc_ip.h` 结构体成员注释放 `;` 之后（`TYPE NAME; /* 注释 */`），全文件统一。
+  `zynq_soc.h` 的寄存器字段注释与 vendored CMSIS 不动（UG585 原文对照）；生成物头部由 `convert_bitstream.py` 产出。
+- `zynq_soc.h` 结构体成员注释放 `;` 之后（`TYPE NAME; /* 注释 */`），全文件统一。
 - 改 C 代码后至少完整 cmake 构建验证；涉及启动路径的改动需用户上板实测确认。
 - 坑：C 里 `x &= (cond) ? A : B;` 安全，但 `x &= ~(cond) ? A : B;` **是错的**（`~` 只作用于条件）。取反要先算掩码。
   GCC 新版对 `static const char hex[16] = "...";` 报 `-Wunterminated-string-initialization`，写 `hex[]` 不带长度。
@@ -66,7 +66,7 @@ CP15 访问器、GIC API（0xF8F01000/0xF8F00100）、PL310 L2C API、L1C/MMU �
   顺序固定：`mmu_init → mmu_and_caches_enable(含 l2_cache_enable) → xip_warm_cache → sys_clock_init → qspi_reconfig`。
 - **L2 投机预取必须关**（AUX_CNT bit28/29 IPFE/DPFE + ACTLR bit1），否则重配那几微秒预取踩死 flash → Prefetch Abort。
   只保留需求式行填充。
-- MMU 页表在 OCM3 (0xFFFF0000) `non-cache` 段；OCR 地址常量表见 `zynq_soc_ip.h`。
+- MMU 页表在 OCM3 (0xFFFF0000) `non-cache` 段；OCR 地址常量表见 `zynq_soc.h`。
 - **`.fast` 段 VMA 从 0x00000000 起址**：放进 `.fast` 的函数**地址就是 0**，取地址传给带 NULL 检查的注册接口会被静默拒收
   （`tick_irq_handler` 就这么被 `irq_attach` 拒过）。**中断处理函数一律不放 `.fast`**，只有 QSPI 重配窗口那类必须 OCM 执行的代码才放。
 - **OCM_CFG=0x18 是本板正常值**，不要把 SWAP 位当损坏证据；读 flash 内容前先查**当前** map 的符号地址

@@ -230,5 +230,5 @@ DMA_DEST_LEN`：写 DEST_LEN 才入队并启动。完成 ack 要同时写 `INT_S
   1 KB 时分配失败会退化成无缓冲（功能仍在，但每次写都直接走 UART 轮询）。
 - `main.c` 的 `bram_test()` 只在 `board_pl_status() == PL_OK` 后跑：GP0 上没有存活从设备时，
   访问**不是返回垃圾而是挂死总线**（无响应不应答），所以必须先确认 PL 配好再碰它。
-- `zynq_soc_ip.h` / `source/soc/cmsis/`：寄存器名与 vendored CMSIS 保持上游原样，
+- `zynq_soc.h` / `source/soc/cmsis/`：寄存器名与 vendored CMSIS 保持上游原样，
   改名会丢"查手册即所得"。
