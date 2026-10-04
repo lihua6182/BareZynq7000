@@ -1,7 +1,7 @@
 #ifndef ZYNQ_MIO_H
 #define ZYNQ_MIO_H
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /*
  * MIO/GPIO pin driver. One module, two halves, two number spaces that

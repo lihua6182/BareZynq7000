@@ -4,7 +4,7 @@
 #include "board_fpga.h"
 #include "zynq_irq.h"
 #include "zynq_mio.h"
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 #include "zynq_tick.h"
 #include "zynq_uart.h"
 

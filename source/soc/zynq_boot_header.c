@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 struct reg_pair {
     uint32_t addr;
@@ -46,18 +46,18 @@ const struct boot_header boot_header = {
                          0xEAFFFFFE, 0xEAFFFFFE,
                          0xEAFFFFFE, 0xEAFFFFFE,
                          0xEAFFFFFE, 0xEAFFFFFE},
-    .width_detection_word = 0xAA995566,           /* BootROM QSPI-boot key value */
-    .header_signature = 0x584C4E58,               /* 'XLNX' */
-    .key_source = 0xFFFFFFFF,                     /* no key: unencrypted FSBL/User code */
-    .header_version = 0x01010000,
-    .source_offset = 0x000008C0,                  /* image offset; 64B aligned, >= 0x8C0 */
-    .fsbl_image_length = 0x00000000,              /* 0: execute-in-place instead of copy */
-    .fsbl_load_address_ram = 0x00000000,
-    .fsbl_exe_address_ram = LQSPI_BASE + 0x8C0U,  /* XIP entry: .vectors at 0xFC0008C0 */
-    .total_length = 0x00000000,                   /* non-secure: = fsbl_image_length, 0 = XIP */
-    .qspi_configuration_word = 0x00000001,        /* fixed 0x00000001 */
-    .boot_header_checksum = 0x00194AC1,           /* ~sum(words 0x20..0x44), one's complement;
-                                                     build-checked by function_validate_boot_header */
-    .reg_init[0].addr = 0xFFFFFFFF,               /* terminator: unused pairs are addr = 0xFFFFFFFF */
+    .width_detection_word = 0xAA995566,          /* BootROM QSPI-boot key value */
+    .header_signature = 0x584C4E58,              /* 'XLNX' */
+    .key_source = 0xFFFFFFFF,                    /* no key: unencrypted FSBL/User code */
+    .header_version = 0x01010000,                /* */
+    .source_offset = 0x000008C0,                 /* image offset; 64B aligned, >= 0x8C0 */
+    .fsbl_image_length = 0x00000000,             /* 0: execute-in-place instead of copy */
+    .fsbl_load_address_ram = 0x00000000,         /*  */
+    .fsbl_exe_address_ram = LQSPI_BASE + 0x8C0U, /* XIP entry: .vectors at 0xFC0008C0 */
+    .total_length = 0x00000000,                  /* non-secure: = fsbl_image_length, 0 = XIP */
+    .qspi_configuration_word = 0x00000001,       /* fixed 0x00000001 */
+    .boot_header_checksum = 0x00194AC1,          /* ~sum(words 0x20..0x44), one's complement;
+                                                    build-checked by function_validate_boot_header */
+    .reg_init[0].addr = 0xFFFFFFFF,              /* terminator: unused pairs are addr = 0xFFFFFFFF */
     .reg_init[0].val = 0x00000000,
 };

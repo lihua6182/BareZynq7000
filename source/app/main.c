@@ -11,7 +11,7 @@
 #include "board.h"
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 #include "zynq_usb.h"
 
 /* newlib console binding: syscalls.c's _write/_read loop over these. */

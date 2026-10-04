@@ -13,7 +13,7 @@
 #include "lzma_stream.h"
 #include "zynq_cache.h"
 #include "zynq_common.h"
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /* slcr.PCAP_CLK_CTRL bit 0 (CLKACT); the reset value already sets it. */
 #define PCAP_CLK_CTRL_CLKACT (0x1UL)

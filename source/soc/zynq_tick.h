@@ -1,7 +1,7 @@
 #ifndef ZYNQ_TICK_H
 #define ZYNQ_TICK_H
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /*
  * 1 ms tick on TTC0 counter 0 (the _1 register group at +0x000):

@@ -1,7 +1,7 @@
 #ifndef ZYNQ_IRQ_H
 #define ZYNQ_IRQ_H
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /* Handler slot type: void f(void). */
 typedef void (*irq_handler_t)(void);

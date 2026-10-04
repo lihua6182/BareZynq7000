@@ -5,7 +5,10 @@
  *        from flash the whole time).
  */
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
+
+#include "zynq_irq.h"
+#include "zynq_tick.h"
 
 #define MMU_TABLE_ENTRIES (0x1000U)  // 4096 x 1 MB sections cover the full 4 GB
 
@@ -143,8 +146,8 @@ static void qspi_reconfig(void) {
        (active only with BAUD_RATE_DIV = 000 above); DLY[4:0] keep reset
        value - MIO8 pad loopback is NOT used (pin left in its boot state). */
     QSPI->LPBK_DLY_ADJ = 0x2DU;
-    QSPI->LQSPI_CR = lqspi_cr;  /* LQ_MODE = 1                    */
-    QSPI->ER = 1U;              /* SPI_EN = 1                     */
+    QSPI->LQSPI_CR = lqspi_cr; /* LQ_MODE = 1                    */
+    QSPI->ER = 1U;             /* SPI_EN = 1                     */
 }
 
 /**
@@ -276,10 +279,10 @@ static void mmu_and_caches_enable(uint32_t* table) {
     __set_ACTLR(__get_ACTLR() | (1UL << 2));
 
     sctlr = __get_SCTLR();
-    sctlr |= SCTLR_M_Msk    // M: enable MMU
-             | SCTLR_C_Msk  // C: enable D cache
-             | SCTLR_Z_Msk  // Z: enable branch prediction
-             | SCTLR_I_Msk; // I: enable I cache
+    sctlr |= SCTLR_M_Msk     // M: enable MMU
+             | SCTLR_C_Msk   // C: enable D cache
+             | SCTLR_Z_Msk   // Z: enable branch prediction
+             | SCTLR_I_Msk;  // I: enable I cache
     __set_SCTLR(sctlr);
     __ISB();
 }
@@ -297,4 +300,7 @@ void soc_init(void) {
 
     sys_clock_init();
     qspi_reconfig();
+
+    irq_init();
+    tick_init();
 }

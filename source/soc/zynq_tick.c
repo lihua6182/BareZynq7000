@@ -8,14 +8,6 @@
 #include "zynq_clock.h"
 #include "zynq_irq.h"
 
-/*
- * TTC0 counter 0 counts down at pclk (= CPU_1x) / 2, reloads and raises
- * its interval interrupt (SPI 42) each wrap; the handler increments
- * tick_ms. Same CPU, same L1 cache: volatile alone keeps the handler
- * and thread views of tick_ms consistent.
- */
-#define TICK_IRQ_ID ((uint32_t)Ttc0Timer0_IRQn) /* SPI 42 = TTC0 counter 0 */
-
 static volatile uint32_t tick_ms;
 
 /**
@@ -43,14 +35,14 @@ void tick_init(void) {
     clock_freqs_get(&clocks);
 
     TTC0->COUNTER_CONTROL_1 = (1UL << 0) | (1UL << 1) | (1UL << 2); /* DIS|INT|DEC */
-    TTC0->INTERRUPT_ENABLE_1 = 0UL;   /* no interrupt while reprogramming */
-    (void)TTC0->INTERRUPT_REGISTER_1; /* drop stale flags (cleared on read) */
-    TTC0->CLOCK_CONTROL_1 = 0x1UL;    /* PS_EN, PS_VAL = 0 (/2), SRC = pclk */
+    TTC0->INTERRUPT_ENABLE_1 = 0UL;                                 /* no interrupt while reprogramming */
+    (void)TTC0->INTERRUPT_REGISTER_1;                               /* drop stale flags (cleared on read) */
+    TTC0->CLOCK_CONTROL_1 = 0x1UL;                                  /* PS_EN, PS_VAL = 0 (/2), SRC = pclk */
     TTC0->INTERVAL_COUNTER_1 = (clocks.cpu_1x / 2UL / 1000UL) - 1UL;
 
     /* Bind before arming, or the level source re-fires forever. */
-    if (irq_attach(TICK_IRQ_ID, tick_irq_handler) == 0) {
-        irq_enable(TICK_IRQ_ID);
+    if (irq_attach(Ttc0Timer0_IRQn, tick_irq_handler) == 0) {
+        irq_enable(Ttc0Timer0_IRQn);
         TTC0->INTERRUPT_ENABLE_1 = 1UL; /* interval interrupt */
     }
 

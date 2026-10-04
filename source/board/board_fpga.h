@@ -37,7 +37,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /* Outcome of the PL configuration, reported by board_pl_status(). */
 enum pl_status {

@@ -152,7 +152,7 @@ static volatile uint32_t* fclk_reg(uint32_t fclk) {
  * @return true on success, false on any out-of-range argument.
  */
 bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
-                 uint32_t div0, uint32_t div1, bool enable) {
+                       uint32_t div0, uint32_t div1, bool enable) {
     volatile uint32_t* clk_ctrl;
     uint32_t value;
 

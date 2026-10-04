@@ -34,13 +34,8 @@ void board_init(void) {
     }
 
     if (pl_load_status == PL_OK) {
-        /* FCLK0 = IO PLL / 10 = 100 MHz; clock before reset release. */
-        clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true);
-
-        /* FCLK0 = IO PLL / 20 = 50 MHz; clock before reset release. */
-        clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true);
-
-        /* FPGA_RST_CTRL resets to 0xF; the FSBL clears it after DONE. */
+        clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true); /* FCLK0 = IO PLL / 10 = 100 MHz */
+        clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true); /* FCLK1 = IO PLL / 20 = 50 MHz */
         fpga_reset_release_all();
     }
 }

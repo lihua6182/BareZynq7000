@@ -1,5 +1,5 @@
-#ifndef ZYNQ_SOC_IP_H
-#define ZYNQ_SOC_IP_H
+#ifndef ZYNQ_SOC_H
+#define ZYNQ_SOC_H
 
 #include "zynq_common.h"
 

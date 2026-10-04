@@ -1,7 +1,7 @@
 #ifndef ZYNQ_UART_H
 #define ZYNQ_UART_H
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /*
  * Poll-mode driver for the two Cadence UARTs (UG585 ch.19), uart_* with

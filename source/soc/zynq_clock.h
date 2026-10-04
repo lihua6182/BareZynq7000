@@ -1,7 +1,7 @@
 #ifndef ZYNQ_CLOCK_H
 #define ZYNQ_CLOCK_H
 
-#include "zynq_soc_ip.h"
+#include "zynq_soc.h"
 
 /*
  * Run-time readout of the PS clock tree (UG585 ch. 25), recomputed from
@@ -65,7 +65,7 @@ enum fclk_src {
 /* Program source, divisors and enable of one FCLK route; returns false
    on an out-of-range argument without touching the hardware. */
 bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
-                 uint32_t div0, uint32_t div1, bool enable);
+                       uint32_t div0, uint32_t div1, bool enable);
 
 /* Gate one FCLK route on/off; divisors and source are preserved. */
 void clock_fclk_enable(enum fclk fclk, bool enable);
