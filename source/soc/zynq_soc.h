@@ -2929,21 +2929,4 @@ typedef struct
 #define NAND_PCELL_ID_Pos (0U)
 #define NAND_PCELL_ID_Msk (0xFFUL) /*  */
 
-/* ------------------------------------------------------------------ */
-/* soc-layer diagnostics (not part of the vendored register map)      */
-/* ------------------------------------------------------------------ */
-
-/* BootROM-era QSPI state, captured at soc_init() entry before anything
-   rewrites it - the only known-good port configuration on this board. */
-typedef struct
-{
-    uint32_t lqspi_clk_ctrl; /* SLCR LQSPI_CLK_CTRL */
-    uint32_t cr;             /* QSPI CR             */
-    uint32_t lqspi_cr;       /* QSPI LQSPI_CR       */
-    uint32_t lpbk_dly_adj;   /* QSPI LPBK_DLY_ADJ   */
-    uint32_t er;             /* QSPI ER             */
-} soc_qspi_boot_cfg;
-
-const soc_qspi_boot_cfg *soc_qspi_boot_cfg_get(void);
-
 #endif /* ZYNQ7000_H */

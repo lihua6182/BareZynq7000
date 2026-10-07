@@ -12,7 +12,6 @@
 #include <stdio.h>
 
 #include "board.h"
-#include "qspi_probe.h"
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
 #include "zynq_soc.h"
@@ -299,58 +298,13 @@ int main(void)
 
     printf("pl_status=%u\n", (unsigned)board_pl_status());
 
-    /* QSPI 端口诊断已收官 (2026-10-07): 出货配置 25MHz 直接采样经
-     * go-live 实证, 预热已删。诊断命令保留按键触发 ('q'/'b'/'c'/'r'/
-     * 'n'/'m'/'k'/'e')。 */
     memset(cdc_write_buf, 'U', sizeof(cdc_write_buf)); /* 上行图案, 内容无关 */
     cdc_throughput_init();
-
-    printf("probe: 'q'=单拍 'b'=突发 'c'=快照 'r'=BootROM复刻 'n'=直接采样 (窗口屏蔽IRQ, "
-           "USB断流)\n");
 
     /* 纯轮询: 续写检查每圈都跑 (上行测速要压满管道), LED/报告按 tick 分频。
      * 主循环不睡眠。 */
     for (;;)
     {
-        /* QSPI 端口诊断: 测速期间勿触发 (CDC 管道会被扫描窗口掐断)。
-         * go-live 后系统留在合法配置上, 其余命令恢复 golden 会挂死, 锁死。 */
-        if (!probe_keys_frozen())
-        {
-            int cmd = uart_try_getc(BOARD_UART);
-            if (cmd == 'q')
-            {
-                probe_sweep();
-            }
-            else if (cmd == 'b')
-            {
-                probe_burst();
-            }
-            else if (cmd == 'c')
-            {
-                probe_boot_cfg();
-            }
-            else if (cmd == 'r')
-            {
-                probe_bootrom();
-            }
-            else if (cmd == 'n')
-            {
-                probe_direct();
-            }
-            else if (cmd == 'm')
-            {
-                probe_mismatch();
-            }
-            else if (cmd == 'k')
-            {
-                probe_blocks();
-            }
-            else if (cmd == 'e')
-            {
-                probe_golive();
-            }
-        }
-
         /* 上行测速相 (DTR=1): 写一笔 2048, 完成即续, 始终压满 IN 管道。 */
         if (cdc_configured && cdc_dtr && !cdc_tx_busy)
         {

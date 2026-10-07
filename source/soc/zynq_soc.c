@@ -46,7 +46,6 @@ static void sys_clock_init(void) __attribute__((section(".fast"), noinline));
  *   0xFA000000-0xFAFFFFFF  unmapped
  *   0xFB000000-0xFB0FFFFF  CPU-only OCM alias          SO RW
  *   0xFB100000-0xFB1FFFFF  CPU-only OCM alias          non-cache RW
- *   0xFB200000-0xFB2FFFFF  flash probe alias           non-cache RO -> PA 0xFC000000
  *   0xFC000000-0xFCFFFFFF  16 MB QSPI flash            WB-alloc RO (XIP)
  *   0xFD000000-0xFFEFFFFF  unmapped
  *   0xFFFF0000-0xFFFFFFFF  high OCM (OCM3)             non-cache RW (MMU tbl)
@@ -76,11 +75,6 @@ static void mmu_init(uint32_t *table)
     // CPU-only aliases of the low OCM (VA -> PA 0x0)
     table[0xFB0] = TT_ENTRY(0x000, TT_STRONGLY_ORDERED | TT_AP_RW);
     table[0xFB1] = TT_ENTRY(0x000, TT_NON_CACHEABLE | TT_AP_RW);
-
-    // qspi_probe's raw window onto the first 1 MB of flash: non-cacheable,
-    // so a bad sample from an unreliable port can never pollute L1D/L2 and
-    // every read truly reaches the QSPI bus. Covers the whole ~156 KB image.
-    table[0xFB2] = TT_ENTRY(0xFC0, TT_NON_CACHEABLE | TT_AP_RO);
 
     // 16 MB QSPI flash, XIP read caching
     for (i = 0xFC0; i < 0xFD0u; i++)
@@ -296,27 +290,11 @@ static void mmu_and_caches_enable(uint32_t *table)
 
 /**
  * @brief  Bring up everything the XIP image needs: MMU/L2 first (caches
- *         cover the flash window), warm the image into L2, then
- *         reconfigure PLLs and QSPI from OCM. Any other order hangs the
- *         bus.
+ *         cover the flash window), then reconfigure PLLs and QSPI from
+ *         OCM. Any other order hangs the bus.
  */
-static soc_qspi_boot_cfg qspi_boot_cfg;
-
-const soc_qspi_boot_cfg *soc_qspi_boot_cfg_get(void)
-{
-    return &qspi_boot_cfg;
-}
-
 void soc_init(void)
 {
-    /* Capture the BootROM-era QSPI state first: nothing up to this point
-       has touched the controller (qspi_probe compares against it). */
-    qspi_boot_cfg.lqspi_clk_ctrl = SLCR->LQSPI_CLK_CTRL;
-    qspi_boot_cfg.cr = QSPI->CR;
-    qspi_boot_cfg.lqspi_cr = QSPI->LQSPI_CR;
-    qspi_boot_cfg.lpbk_dly_adj = QSPI->LPBK_DLY_ADJ;
-    qspi_boot_cfg.er = QSPI->ER;
-
     mmu_init(mmu_table);
     mmu_and_caches_enable(mmu_table);
 
