@@ -825,8 +825,9 @@ static inline void mio_toggle(uint32_t pin)
     *mio_reg_mdata(bank, MIO_MDATA_HALF(pin)) = ((0xFFFFUL ^ bit) << 16) | ((cur != 0U) ? 0UL : bit);
 }
 
-/* Output latch state (DATA_x), 0 or 1 - what was written, not the pad. */
-static inline int mio_get_output(uint32_t pin)
+/* Output latch read-back (DATA_x), 0 or 1 - what was written, not the
+   pad; for the real pad level use mio_get_value(). */
+static inline int mio_get_output_latch(uint32_t pin)
 {
     return ((*mio_reg_data(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }

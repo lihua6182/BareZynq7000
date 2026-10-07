@@ -20,10 +20,6 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-#if defined(__GNUC__)
-
-#endif
-
 #ifdef __cplusplus
 extern "C"
 {

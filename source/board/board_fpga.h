@@ -47,7 +47,7 @@ enum pl_status
     PL_ERR_LENGTH,      /* byte count is not a multiple of 4      */
     PL_ERR_NO_SYNC,     /* no PCAP sync word: wrong byte order?   */
     PL_ERR_HDR,         /* packed header magic/lengths invalid    */
-    PL_ERR_STREAM,      /* RLE payload malformed/length mismatch  */
+    PL_ERR_STREAM,      /* payload malformed/length mismatch      */
     PL_ERR_CRC,         /* decompressed image failed CRC-32       */
     PL_ERR_NO_POWER,    /* MCTRL[PCFG_POR_B] = 0: PL not powered  */
     PL_ERR_NOT_RESET,   /* PCFG_INIT did not clear after PROG_B   */
@@ -215,8 +215,9 @@ enum pl_status fpga_config_clear(void);
 
 /*
  * Configure the PL from an image: bridge up, logic held in reset, push,
- * wait for DONE, open the level shifters. 'img' is a ZBSP packed blob
- * (no alignment) or a raw bitstream (64-byte aligned, len % 4 == 0,
+ * wait for DONE, open the level shifters. 'img' is a ZBLZ or ZBSP
+ * packed blob (no alignment) or a raw bitstream (64-byte aligned,
+ * len % 4 == 0,
  * PCAP byte order: sync word 0xAA995566 appears as 66 55 99 AA).
  *
  * On failure the reset lines stay asserted - a half-configured design

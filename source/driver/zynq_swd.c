@@ -19,7 +19,7 @@ static bool swd_wait_rx(COPROC_Type *c, uint32_t n, uint32_t timeout_ms)
 {
     uint32_t t0 = tick_get();
 
-    while (((c->FSTAT >> 12) & 0xFFu) < n)
+    while (COPROC_FSTAT_RXCNT(c->FSTAT) < n)
     {
         if ((tick_get() - t0) > timeout_ms)
         {

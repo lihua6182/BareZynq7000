@@ -19,7 +19,7 @@ extern void USBD_IRQHandler(uint8_t busid);
 #define USB_ULPI_FIRST_MIO (28u)
 #define USB_ULPI_LAST_MIO  (39u)
 
-/* USB3300 RESET#, 低有效, GPIO 推挽输出。 */
+/* USB3300 RESET, 高有效复位 (MIO47 直连), GPIO 推挽输出。 */
 #define USB_PHY_RESET_MIO (47u)
 
 /* 到达 usb_dc_low_level_init() 时板子已上电很久 (boot + PL 加载), USB3300

@@ -35,9 +35,9 @@
     ((1UL << 0) | (2UL << 1) | ((((uint32_t)(beat_count)) - 1UL) << 4) | (0UL << 8) | (1UL << 14) | (2UL << 15) |      \
      ((((uint32_t)(beat_count)) - 1UL) << 18) | (0UL << 22))
 
-/* 最近一次超时的故障现场 (FTC0/FSRC), 供排障; 0 = 无故障。 */
-uint32_t dma_last_ftc;
-uint32_t dma_last_fsrc;
+/* 最近一次超时的故障现场 (PL330 FTC0/FSRC), 供排障; 0 = 无故障。 */
+uint32_t dma_last_fault_type;
+uint32_t dma_last_fault_source;
 
 /* 完成轮询上限 (与 board_fpga 的 PCAP 轮询同量级, 667MHz 下若干秒)。 */
 #define DMA_EVENT_POLL_LIMIT (60000000u)
@@ -68,8 +68,8 @@ static uint8_t *emit_mov(uint8_t *p, uint8_t rd, uint32_t imm)
 /**
  * @brief  DMAC 复位与静态配置: 复位脉冲 + 关看门狗 + 清残留事件。
  * @return 0。
- * @note   时钟 APER_CLK_CTRL[0] 复位即开, 仍显式再开一次。全程只用
- *         非安全 APB 口 (DMAC_NS, 0xF8004000) 下发 debug 指令。
+ * @note   时钟 APER_CLK_CTRL[0] 复位即开, 仍显式再开一次。本函数不
+ *         下发 debug 指令; 安全 APB 口约束见 dma_memcpy()。
  */
 int dma_init(void)
 {
@@ -159,8 +159,8 @@ int dma_memcpy(void *dst, const void *src, uint32_t byte_count)
     {
         if (++count > DMA_EVENT_POLL_LIMIT)
         {
-            dma_last_ftc = DMAC->FTC0;
-            dma_last_fsrc = DMAC->FSRC;
+            dma_last_fault_type = DMAC->FTC0;
+            dma_last_fault_source = DMAC->FSRC;
             return -1; /* 超时: 微码 fault 或地址不可达 */
         }
     }

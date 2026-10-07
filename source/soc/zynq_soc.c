@@ -10,21 +10,21 @@
 #include "zynq_irq.h"
 #include "zynq_tick.h"
 
-#define MMU_TABLE_ENTRIES (0x1000U) // 4096 x 1 MB sections cover the full 4 GB
+#define MMU_TABLE_ENTRIES (0x1000U) /* 4096 x 1 MB sections cover the full 4 GB */
 
 /* Page table in non-cacheable high OCM (0xFFFF0000): the CA9 walker is
    not D-cache coherent. */
 static uint32_t mmu_table[MMU_TABLE_ENTRIES] __attribute__((aligned(16384), section(".mmu_table")));
 
-#define TT_SECTION          (0x2U)                      // bits[1:0] == 10: 1 MB section
-#define TT_DOMAIN_0         (0x0U << 5)                 // domain 0
-#define TT_XN               (1U << 4)                   // execute never
-#define TT_AP_RW            (0x2U << 10)                // AP[2:0] == 010: RW (PL1 and PL0)
-#define TT_AP_RO            ((0x2U << 10) | (1U << 15)) // AP[2:0] == 110: RO (PL1 and PL0)
-#define TT_STRONGLY_ORDERED (0U)                        // TEX=000, C=0, B=0
+#define TT_SECTION          (0x2U)                      /* bits[1:0] == 10: 1 MB section */
+#define TT_DOMAIN_0         (0x0U << 5)                 /* domain 0 */
+#define TT_XN               (1U << 4)                   /* execute never */
+#define TT_AP_RW            (0x2U << 10)                /* AP[2:0] == 010: RW (PL1 and PL0) */
+#define TT_AP_RO            ((0x2U << 10) | (1U << 15)) /* AP[2:0] == 110: RO (PL1 and PL0) */
+#define TT_STRONGLY_ORDERED (0U)                        /* TEX=000, C=0, B=0 */
 #define TT_WRITE_BACK_ALLOC                                                                                            \
-    ((1U << 12) | (1U << 3) | (1U << 2)) // TEX=001, C=1, B=1: normal, write-back, write-allocate
-#define TT_NON_CACHEABLE (1U << 12)      // TEX=001, C=0, B=0: normal, non-cacheable
+    ((1U << 12) | (1U << 3) | (1U << 2)) /* TEX=001, C=1, B=1: normal, write-back, write-allocate */
+#define TT_NON_CACHEABLE (1U << 12)      /* TEX=001, C=0, B=0: normal, non-cacheable */
 
 #define TT_ENTRY(phys_mb, attr) ((((uint32_t)(phys_mb)) << 20) | (attr) | TT_DOMAIN_0 | TT_SECTION)
 
@@ -57,32 +57,32 @@ static void mmu_init(uint32_t *table)
 {
     uint32_t i;
 
-    // unmapped: any access triggers a translation fault
+    /* unmapped: any access triggers a translation fault */
     for (i = 0; i < MMU_TABLE_ENTRIES; i++)
     {
         table[i] = 0;
     }
 
-    // Low 192 KB OCM, write-back allocate
+    /* Low 192 KB OCM, write-back allocate */
     table[0x000] = TT_ENTRY(0x000, TT_WRITE_BACK_ALLOC | TT_AP_RW);
 
-    // PL + IOP peripherals + PS system registers. DDR (0x001-0x3FF) left unmapped.
+    /* PL + IOP peripherals + PS system registers. DDR (0x001-0x3FF) left unmapped. */
     for (i = 0x400; i < 0xFA0u; i++)
     {
         table[i] = TT_ENTRY(i, TT_STRONGLY_ORDERED | TT_AP_RW | TT_XN);
     }
 
-    // CPU-only aliases of the low OCM (VA -> PA 0x0)
+    /* CPU-only aliases of the low OCM (VA -> PA 0x0) */
     table[0xFB0] = TT_ENTRY(0x000, TT_STRONGLY_ORDERED | TT_AP_RW);
     table[0xFB1] = TT_ENTRY(0x000, TT_NON_CACHEABLE | TT_AP_RW);
 
-    // 16 MB QSPI flash, XIP read caching
+    /* 16 MB QSPI flash, XIP read caching */
     for (i = 0xFC0; i < 0xFD0u; i++)
     {
         table[i] = TT_ENTRY(i, TT_WRITE_BACK_ALLOC | TT_AP_RO);
     }
 
-    // High 64 KB OCM (OCM3): MMU table + .no_cache_ram
+    /* High 64 KB OCM (OCM3): MMU table + .no_cache_ram */
     table[0xFFF] = TT_ENTRY(0xFFF, TT_NON_CACHEABLE | TT_AP_RW);
 }
 
@@ -261,29 +261,29 @@ static void mmu_and_caches_enable(uint32_t *table)
 {
     uint32_t sctlr;
 
-    // TTBR0 = table; DACR all-client; ACTLR SMP + maintenance broadcast.
+    /* TTBR0 = table; DACR all-client; ACTLR SMP + maintenance broadcast. */
     __DSB();
     __set_TTBR0((uint32_t)(uintptr_t)table);
     __set_DACR(0x55555555u);
 
     __set_ACTLR(__get_ACTLR() | ACTLR_SMP_Msk | (1UL << 0));
 
-    // SCU: flush the duplicate tag store, then enable.
+    /* SCU: flush the duplicate tag store, then enable. */
     MPCORE->SCU_INVALIDATE = 0xFFFFU;
     MPCORE->SCU_CONTROL |= 1UL;
 
-    // L2 on before MMU/L1: the QSPI reconfiguration window later runs
-    // fully covered by L1+L2.
+    /* L2 on before MMU/L1: the QSPI reconfiguration window later runs
+       fully covered by L1+L2. */
     l2_cache_enable();
 
-    // ACTLR[2]: L1 instruction prefetch.
+    /* ACTLR[2]: L1 instruction prefetch. */
     __set_ACTLR(__get_ACTLR() | (1UL << 2));
 
     sctlr = __get_SCTLR();
-    sctlr |= SCTLR_M_Msk    // M: enable MMU
-             | SCTLR_C_Msk  // C: enable D cache
-             | SCTLR_Z_Msk  // Z: enable branch prediction
-             | SCTLR_I_Msk; // I: enable I cache
+    sctlr |= SCTLR_M_Msk    /* M: enable MMU */
+             | SCTLR_C_Msk  /* C: enable D cache */
+             | SCTLR_Z_Msk  /* Z: enable branch prediction */
+             | SCTLR_I_Msk; /* I: enable I cache */
     __set_SCTLR(sctlr);
     __ISB();
 }

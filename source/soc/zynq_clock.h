@@ -76,4 +76,4 @@ void clock_fclk_enable(enum fclk fclk, bool enable);
    PLL_src / (div0 * div1) read back from the SLCR. */
 uint32_t clock_fclk_freq_get(enum fclk fclk);
 
-#endif
+#endif /* ZYNQ_CLOCK_H */

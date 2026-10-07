@@ -168,9 +168,9 @@ static void pcap_ack_dma_done(void)
  *         generic NO_DONE.
  * @param  img Start of the image.
  * @param  len Length of the image in bytes.
- * @return Non-zero when present.
+ * @return True when present.
  */
-static int has_pcap_sync_word(const uint8_t *img, uint32_t len)
+static bool has_pcap_sync_word(const uint8_t *img, uint32_t len)
 {
     uint32_t limit;
     uint32_t i;
@@ -180,10 +180,10 @@ static int has_pcap_sync_word(const uint8_t *img, uint32_t len)
     {
         if ((img[i] == 0x66U) && (img[i + 1U] == 0x55U) && (img[i + 2U] == 0x99U) && (img[i + 3U] == 0xAAU))
         {
-            return 1;
+            return true;
         }
     }
-    return 0;
+    return false;
 }
 
 /* Table-driven CRC-32 (reflected, 0xEDB88320). Runs without the final
@@ -375,7 +375,7 @@ static enum pl_status pcap_wait_pl_done(void)
  */
 static enum pl_status load_raw_bitstream(const uint8_t *img, uint32_t len)
 {
-    if (has_pcap_sync_word(img, len) == 0)
+    if (!has_pcap_sync_word(img, len))
     {
         return PL_ERR_NO_SYNC;
     }
@@ -437,8 +437,8 @@ static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header
     uint32_t filled = 0UL; /* bytes in the staging buffer (incl. <4 carry) */
     uint32_t decoded = 0UL;
     uint32_t crc = 0xFFFFFFFFUL;
-    int sync_checked = 0;
-    int stream_done = 0;
+    bool sync_checked = false;
+    bool stream_done = false;
     enum pl_status st;
 
     crc32_table_init();
@@ -446,12 +446,12 @@ static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header
     {
         /* Every marker emits at most 128 bytes: "128 free" always
            makes progress. */
-        while ((stream_done == 0) && ((filled + 128UL) <= DMA_STAGE_BYTES))
+        while ((!stream_done) && ((filled + 128UL) <= DMA_STAGE_BYTES))
         {
             uint32_t marker = *payload++;
             if (marker == 0UL)
             { /* end marker */
-                stream_done = 1;
+                stream_done = true;
             }
             else if (marker <= 0x3FUL)
             { /* literal run */
@@ -492,11 +492,11 @@ static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header
         if ((!sync_checked) && (filled != 0UL))
         {
             uint32_t scan = (filled < SYNC_SCAN_BYTES) ? filled : SYNC_SCAN_BYTES;
-            if (has_pcap_sync_word(stage, scan) == 0)
+            if (!has_pcap_sync_word(stage, scan))
             {
                 return PL_ERR_NO_SYNC;
             }
-            sync_checked = 1;
+            sync_checked = true;
         }
 
         /* Whole words out; the <4 remainder carries to the next round
@@ -526,7 +526,7 @@ static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header
             }
         }
 
-        if (stream_done != 0)
+        if (stream_done)
         {
             break;
         }
@@ -557,7 +557,7 @@ struct zblz_sink
     uint8_t *stage;
     uint32_t filled; /* bytes staged, awaiting DMA            */
     uint32_t crc;    /* running CRC over DMA'd words          */
-    int sync_checked;
+    bool sync_checked;
     enum pl_status st; /* first sink-side error sticks          */
 };
 
@@ -574,14 +574,14 @@ static enum pl_status zblz_flush(struct zblz_sink *s)
     {
         return PL_OK;
     }
-    if (s->sync_checked == 0)
+    if (!s->sync_checked)
     {
         scan = (s->filled < SYNC_SCAN_BYTES) ? s->filled : SYNC_SCAN_BYTES;
-        if (has_pcap_sync_word(s->stage, scan) == 0)
+        if (!has_pcap_sync_word(s->stage, scan))
         {
             return PL_ERR_NO_SYNC;
         }
-        s->sync_checked = 1;
+        s->sync_checked = true;
     }
     cache_clean_acp(s->stage, s->filled);
     s->crc = crc32_update(s->crc, s->stage, s->filled);
@@ -635,7 +635,7 @@ static enum pl_status load_zblz_image(const uint8_t *img, const struct zb_header
     s.stage = (uint8_t *)dma_stage_buf;
     s.filled = 0UL;
     s.crc = 0xFFFFFFFFUL;
-    s.sync_checked = 0;
+    s.sync_checked = false;
     s.st = PL_OK;
 
     if (lzma_decode_stream(img + ZB_HDR_BYTES, hdr->packed_len, hdr->raw_len, zblz_sink, &s) != LZMA_STREAM_OK)
@@ -721,7 +721,7 @@ static enum pl_status pl_load_image(const void *img, uint32_t len)
  *         all reset lines asserted (a half-configured design never runs),
  *         push, wait for DONE, open the shifters. The lines stay
  *         asserted on return - clock the fabric and release when ready.
- * @param  img ZBSP packed blob or raw bitstream.
+ * @param  img ZBLZ/ZBSP packed blob or raw bitstream.
  * @param  len Length in bytes, a multiple of 4.
  * @return PL_OK, or the reason it failed.
  */

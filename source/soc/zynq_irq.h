@@ -29,4 +29,4 @@ void irq_init(void);
 void irq_enable(uint32_t id);
 void irq_disable(uint32_t id);
 
-#endif
+#endif /* ZYNQ_IRQ_H */

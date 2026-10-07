@@ -1,5 +1,5 @@
-#ifndef ZYNQ_COPROC_H
-#define ZYNQ_COPROC_H
+#ifndef ZYNQ_PPC_H
+#define ZYNQ_PPC_H
 
 /*
  * Driver for the proto_coproc protocol co-processor (a PL AXI4-Lite IP,
@@ -12,7 +12,7 @@
  *   coproc_cmd(COPROC, COPROC_CMD_RESET | COPROC_CMD_FLUSH_ALL);
  *   coproc_load(COPROC, prog, PROG_WORDS);
  *   COPROC->TXDATA = 0xA53C81FF;
- *   coproc_run(COPROC);
+ *   coproc_cmd(COPROC, COPROC_CMD_RUN);
  *   coproc_wait_halt(COPROC, 100);
  *   word = coproc_rx_pop(COPROC);
  *
@@ -122,4 +122,4 @@ static inline void coproc_load(COPROC_Type *c, const uint32_t *img, uint32_t wor
     }
 }
 
-#endif /* ZYNQ_COPROC_H */
+#endif /* ZYNQ_PPC_H */

@@ -14,7 +14,7 @@
  * 时序: SWCLK 由 PPC 按 PL 时钟产生 (FCLK0=100MHz 时 写 ~12.5MHz / 读 ~11.1MHz);
  * 目标跑不了就调低 board.c 里 FCLK0 的 IO PLL 分频, SWCLK 按比例下降。
  *
- * 典型用法 (标准初始化序列见 app/main.c 的 swd_init_run()):
+ * 典型用法 (标准初始化序列):
  *   coproc_cmd(COPROC, COPROC_CMD_FLUSH_ALL);
  *   coproc_load(COPROC, swd_dap_prog, SWD_DAP_PROG_WORDS);
  *   swd_configure(COPROC, 1u, 2u);

@@ -237,4 +237,4 @@ int uart_try_getc(UART_Type *uart);
 /* Send a NUL-terminated string. */
 void uart_puts(UART_Type *uart, const char *s);
 
-#endif
+#endif /* ZYNQ_UART_H */

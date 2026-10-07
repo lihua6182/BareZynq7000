@@ -14,4 +14,4 @@ void tick_init(void);
 void tick_mdelay(uint32_t ms);
 uint32_t tick_get(void);
 
-#endif
+#endif /* ZYNQ_TICK_H */

@@ -84,9 +84,9 @@ void _exit(int status)
 __attribute__((weak)) int _read(int file, char *ptr, int len)
 {
     (void)file;
-    int DataIdx;
+    int idx;
 
-    for (DataIdx = 0; DataIdx < len; DataIdx++)
+    for (idx = 0; idx < len; idx++)
     {
         *ptr++ = __io_getchar();
     }
@@ -107,9 +107,9 @@ __attribute__((weak)) int _read(int file, char *ptr, int len)
 __attribute__((weak)) int _write(int file, char *ptr, int len)
 {
     (void)file;
-    int DataIdx;
+    int idx;
 
-    for (DataIdx = 0; DataIdx < len; DataIdx++)
+    for (idx = 0; idx < len; idx++)
     {
         __io_putchar(*ptr++);
     }
