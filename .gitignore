@@ -13,3 +13,6 @@ scripts/jflash/*.log
 # bitstream
 /source/board/board_fpga_bitstream.c
 /source/board/board_fpga_bitstream.h
+
+# 项目记忆 (本地文件, 不入库)
+/.workbuddy
