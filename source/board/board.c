@@ -12,12 +12,35 @@
 /* Outcome of the last PL programming; query via board_pl_status(). */
 static enum pl_status pl_load_status = PL_NO_IMAGE;
 
+void board_console_init(void)
+{
+    mio_enable_clock();
+    mio_set_function(BOARD_UART_TX_MIO, MIO_FN_UART);
+    mio_set_function(BOARD_UART_RX_MIO, MIO_FN_UART);
+    mio_enable_pull_up(BOARD_UART_TX_MIO);
+    mio_enable_pull_up(BOARD_UART_RX_MIO);
+    uart_init(BOARD_UART, BOARD_UART_BAUD_HZ);
+}
+
+void board_led_init(void)
+{
+    mio_enable_clock();
+    mio_set_function(BOARD_LED_MIO, MIO_FN_GPIO);
+    mio_direction_output(BOARD_LED_MIO, 0);
+}
+
+void board_led_toggle(void)
+{
+    mio_toggle(BOARD_LED_MIO);
+}
+
 /**
  * @brief  Query the outcome of the PL programming done by board_init().
  * @return PL_OK, PL_NO_IMAGE (no bitstream linked), else the
  *         first load error.
  */
-enum pl_status board_pl_status(void) {
+enum pl_status board_pl_status(void)
+{
     return pl_load_status;
 }
 
@@ -27,13 +50,16 @@ enum pl_status board_pl_status(void) {
  * On a failed or missing image nothing is started: the reset lines stay
  * asserted so a half-configured design never runs.
  */
-void board_init(void) {
+void board_init(void)
+{
     /* fpga_img[] is generated from bitstream.bin; zero length = --stub. */
-    if (FPGA_IMG_LEN != 0u) {
+    if (FPGA_IMG_LEN != 0u)
+    {
         pl_load_status = fpga_load(fpga_img, FPGA_IMG_LEN);
     }
 
-    if (pl_load_status == PL_OK) {
+    if (pl_load_status == PL_OK)
+    {
         clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true); /* FCLK0 = IO PLL / 10 = 100 MHz */
         clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true); /* FCLK1 = IO PLL / 20 = 50 MHz */
         fpga_reset_release_all();

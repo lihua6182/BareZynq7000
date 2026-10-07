@@ -16,7 +16,8 @@
  *   Not decoded: CAN MIO clock, trace EMIO clock (DBG_CLK_CTRL[6]),
  *   watchdog source (SWDT_CLK_SEL).
  */
-struct clock_freqs {
+struct clock_freqs
+{
     uint32_t ps_clk;    /* PS_CLK crystal input                        */
     uint32_t arm_pll;   /* ARM PLL output                              */
     uint32_t ddr_pll;   /* DDR PLL output                              */
@@ -44,19 +45,21 @@ struct clock_freqs {
     uint32_t smc;       /* SMC clock (gated CPU_1x)                    */
 };
 
-void clock_freqs_get(struct clock_freqs* freqs);
+void clock_freqs_get(struct clock_freqs *freqs);
 
 /* PL output clocks FCLK0-3: FCLK = PLL_src / (div0 * div1), divisors
    1..63, div1 = 1 for no cascade. The source mux is not glitch-free
    (ch. 25), so clock_fclk_config gates the clock around the update. */
-enum fclk {
+enum fclk
+{
     FCLK0 = 0,
     FCLK1 = 1,
     FCLK2 = 2,
     FCLK3 = 3
 };
 
-enum fclk_src {
+enum fclk_src
+{
     FCLK_SRC_IO = 0x0,
     FCLK_SRC_ARM = 0x2,
     FCLK_SRC_DDR = 0x3
@@ -64,8 +67,7 @@ enum fclk_src {
 
 /* Program source, divisors and enable of one FCLK route; returns false
    on an out-of-range argument without touching the hardware. */
-bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
-                       uint32_t div0, uint32_t div1, bool enable);
+bool clock_fclk_config(enum fclk fclk, enum fclk_src src, uint32_t div0, uint32_t div1, bool enable);
 
 /* Gate one FCLK route on/off; divisors and source are preserved. */
 void clock_fclk_enable(enum fclk fclk, bool enable);

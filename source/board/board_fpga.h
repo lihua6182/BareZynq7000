@@ -40,7 +40,8 @@
 #include "zynq_soc.h"
 
 /* Outcome of the PL configuration, reported by board_pl_status(). */
-enum pl_status {
+enum pl_status
+{
     PL_OK = 0,
     PL_ERR_SRC_ALIGN,   /* image base is not 64-byte aligned      */
     PL_ERR_LENGTH,      /* byte count is not a multiple of 4      */
@@ -72,8 +73,10 @@ enum pl_status {
 
 /* Assert a reset line (drive FCLKRESETn low). Returns 0, or -1 when line
    is not one of the four lines. */
-static inline int fpga_reset_assert(uint32_t line) {
-    if (line >= FPGA_RESET_LINE_COUNT) {
+static inline int fpga_reset_assert(uint32_t line)
+{
+    if (line >= FPGA_RESET_LINE_COUNT)
+    {
         return -1;
     }
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
@@ -84,8 +87,10 @@ static inline int fpga_reset_assert(uint32_t line) {
 
 /* Release a reset line (drive FCLKRESETn high). Returns 0, or -1 when line
    is not one of the four lines. */
-static inline int fpga_reset_release(uint32_t line) {
-    if (line >= FPGA_RESET_LINE_COUNT) {
+static inline int fpga_reset_release(uint32_t line)
+{
+    if (line >= FPGA_RESET_LINE_COUNT)
+    {
         return -1;
     }
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
@@ -96,33 +101,39 @@ static inline int fpga_reset_release(uint32_t line) {
 
 /* Is that reset line asserted? Non-zero when asserted, -1 when line is not
    one of the four lines. */
-static inline int fpga_reset_is_asserted(uint32_t line) {
-    if (line >= FPGA_RESET_LINE_COUNT) {
+static inline int fpga_reset_is_asserted(uint32_t line)
+{
+    if (line >= FPGA_RESET_LINE_COUNT)
+    {
         return -1;
     }
     return (int)((SLCR->FPGA_RST_CTRL >> line) & 1UL);
 }
 
 /* State of all four lines as a bit mask: bit n set = reset line n asserted. */
-static inline uint32_t fpga_reset_state(void) {
+static inline uint32_t fpga_reset_state(void)
+{
     return SLCR->FPGA_RST_CTRL & 0xFUL;
 }
 
 /* Write the four lines at once from a mask: bit n set = assert reset line n. */
-static inline void fpga_reset_set(uint32_t mask) {
+static inline void fpga_reset_set(uint32_t mask)
+{
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->FPGA_RST_CTRL = mask & 0xFUL;
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
 /* Assert all four lines: PL logic held in reset, pads unchanged. */
-static inline void fpga_reset_assert_all(void) {
+static inline void fpga_reset_assert_all(void)
+{
     fpga_reset_set(0xFUL);
 }
 
 /* Release all four lines: the fabric starts running. Fabric clock must
    already run; no PS->PL AXI transaction may be in flight (ch.6). */
-static inline void fpga_reset_release_all(void) {
+static inline void fpga_reset_release_all(void)
+{
     fpga_reset_set(0x0UL);
 }
 
@@ -136,30 +147,35 @@ int fpga_reset_pulse(uint32_t line);
 /* ------------------------------------------------------------------ */
 
 /* Set the shifter enables directly: FPGA_LVL_OFF / _PS_TO_PL / _ALL. */
-static inline void fpga_lvl_set(uint32_t value) {
+static inline void fpga_lvl_set(uint32_t value)
+{
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->LVL_SHFTR_EN = value;
     SLCR->LOCK = SLCR_LOCK_KEY;
 }
 
 /* Current shifter enable value. */
-static inline uint32_t fpga_lvl_get(void) {
+static inline uint32_t fpga_lvl_get(void)
+{
     return SLCR->LVL_SHFTR_EN;
 }
 
 /* All shifters off (ch.2 shutdown step 1; also the powered-down state). */
-static inline void fpga_lvl_off(void) {
+static inline void fpga_lvl_off(void)
+{
     fpga_lvl_set(FPGA_LVL_OFF);
 }
 
 /* PS->PL direction only (ch.2 step 2): the state while programming. */
-static inline void fpga_lvl_ps_to_pl(void) {
+static inline void fpga_lvl_ps_to_pl(void)
+{
     fpga_lvl_set(FPGA_LVL_PS_TO_PL);
 }
 
 /* Both directions (ch.2 step 5, after DONE): PL->PS signals are blocked
    until this is set. */
-static inline void fpga_lvl_all(void) {
+static inline void fpga_lvl_all(void)
+{
     fpga_lvl_set(FPGA_LVL_ALL);
 }
 
@@ -168,18 +184,21 @@ static inline void fpga_lvl_all(void) {
 /* ------------------------------------------------------------------ */
 
 /* Is the PL powered? MCTRL[PCFG_POR_B] = 0: nothing else works. */
-static inline bool fpga_is_powered(void) {
+static inline bool fpga_is_powered(void)
+{
     return ((DEVCFG->MCTRL & DEVCFG_MCTRL_PCFG_POR_B_Msk) != 0U);
 }
 
 /* Ready for configuration data? STATUS[PCFG_INIT]: 0 while housecleaning
    / PROG_B held, 1 once the config memory is clear. */
-static inline bool fpga_is_ready(void) {
+static inline bool fpga_is_ready(void)
+{
     return ((DEVCFG->STATUS & DEVCFG_STATUS_PCFG_INIT_Msk) != 0U);
 }
 
 /* Configuration succeeded (INT_STS[PCFG_DONE], write-1-to-clear). */
-static inline bool fpga_is_done(void) {
+static inline bool fpga_is_done(void)
+{
     return ((DEVCFG->INT_STS & DEVCFG_IXR_PCFG_DONE_Msk) != 0U);
 }
 
@@ -208,6 +227,6 @@ enum pl_status fpga_config_clear(void);
  *       fpga_reset_release_all();
  *   }
  */
-enum pl_status fpga_load(const void* img, uint32_t len);
+enum pl_status fpga_load(const void *img, uint32_t len);
 
 #endif /* BOARD_FPGA_H */

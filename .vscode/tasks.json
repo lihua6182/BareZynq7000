@@ -22,14 +22,19 @@
             "problemMatcher": []
         },
         {
-            "label": "Flash (J-Flash QSPI XIP)",
-            "type": "process",
-            "command": "C:\\Program Files\\SEGGER\\JLink_V956\\JFlash.exe",
-            "args": [
-                "-openprjC:\\WorkSpace\\BareZynq7000\\scripts\\jflash\\jflash_zynq7000.jflash",
-                "-auto",
-                "-exit"
-            ],
+            "label": "Flash (J-Link QSPI XIP)",
+            "type": "shell",
+            "command": "(echo loadfile ${input:flashHex}& echo w4 0xF8000008 0xDF0D& echo w4 0xF8000200 0x1& echo Sleep 200& echo qc) | \"C:\\Program Files\\SEGGER\\JLink_V956\\JLink.exe\" -device XC7Z010 -if JTAG -speed 8000 -jtagconf 6,1 -autoconnect 1",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": [
+                        "/d",
+                        "/c"
+                    ]
+                }
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -39,6 +44,20 @@
                 "clear": true
             },
             "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "flashHex",
+            "type": "pickString",
+            "description": "选择要烧写的镜像 (build 产物)",
+            "options": [
+                "build/source/app/app.hex",
+                "build/source/tests/dma_test/dma_test.hex",
+                "build/source/tests/ppc_stress/ppc_stress.hex",
+                "build/source/tests/swd_test/swd_test.hex"
+            ],
+            "default": "build/source/app/app.hex"
         }
     ]
 }

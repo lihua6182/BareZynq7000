@@ -22,7 +22,7 @@
 
 void usb_phy_reset_pulse(void);
 
-int usb_ulpi_read_reg(uint8_t addr, uint8_t* val);
+int usb_ulpi_read_reg(uint8_t addr, uint8_t *val);
 
 int usb_phy_link_check(void);
 

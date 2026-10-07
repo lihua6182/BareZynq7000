@@ -28,6 +28,6 @@
 #define DMA_MEMCPY_MAX_BYTES (496u * 64u)
 
 int dma_init(void);
-int dma_memcpy(void* dst, const void* src, uint32_t byte_count);
+int dma_memcpy(void *dst, const void *src, uint32_t byte_count);
 
 #endif /* ZYNQ_DMA_H */

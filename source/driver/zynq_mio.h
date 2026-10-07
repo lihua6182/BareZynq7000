@@ -663,40 +663,72 @@
    packed 16 pins per word; per-bank groups repeat every 0x40. */
 
 /* Register at a byte offset from the GPIO base. */
-static inline volatile uint32_t* mio_reg_at(uint32_t byte_offset) {
-    return &((volatile uint32_t*)(uintptr_t)GPIO)[byte_offset / 4UL];
+static inline volatile uint32_t *mio_reg_at(uint32_t byte_offset)
+{
+    return &((volatile uint32_t *)(uintptr_t)GPIO)[byte_offset / 4UL];
 }
 
 /* Per-bank register: byte_offset is the bank-0 offset of the group. */
-static inline volatile uint32_t* mio_reg_bank(uint32_t byte_offset, uint32_t bank) {
+static inline volatile uint32_t *mio_reg_bank(uint32_t byte_offset, uint32_t bank)
+{
     return mio_reg_at(byte_offset + (0x040UL * bank));
 }
 
 /* MASK_DATA_x_yL: the only output write path (upper 16 bits mask the
    pins to leave untouched); half selects the low/high 16 pins. */
-static inline volatile uint32_t* mio_reg_mdata(uint32_t bank, uint32_t half) {
+static inline volatile uint32_t *mio_reg_mdata(uint32_t bank, uint32_t half)
+{
     return mio_reg_at((0x008UL * bank) + (0x004UL * half));
 }
 
 /* DATA_x: output latch. */
-static inline volatile uint32_t* mio_reg_data(uint32_t bank) {
+static inline volatile uint32_t *mio_reg_data(uint32_t bank)
+{
     return mio_reg_at(0x040UL + (0x004UL * bank));
 }
 
 /* DATA_x_RO: pad level. */
-static inline volatile uint32_t* mio_reg_data_ro(uint32_t bank) {
+static inline volatile uint32_t *mio_reg_data_ro(uint32_t bank)
+{
     return mio_reg_at(0x060UL + (0x004UL * bank));
 }
 
-static inline volatile uint32_t* mio_reg_dirm(uint32_t bank) { return mio_reg_bank(0x204UL, bank); }
-static inline volatile uint32_t* mio_reg_oen(uint32_t bank) { return mio_reg_bank(0x208UL, bank); }
-static inline volatile uint32_t* mio_reg_int_mask(uint32_t bank) { return mio_reg_bank(0x20CUL, bank); }
-static inline volatile uint32_t* mio_reg_int_en(uint32_t bank) { return mio_reg_bank(0x210UL, bank); }
-static inline volatile uint32_t* mio_reg_int_dis(uint32_t bank) { return mio_reg_bank(0x214UL, bank); }
-static inline volatile uint32_t* mio_reg_int_stat(uint32_t bank) { return mio_reg_bank(0x218UL, bank); }
-static inline volatile uint32_t* mio_reg_int_type(uint32_t bank) { return mio_reg_bank(0x21CUL, bank); }
-static inline volatile uint32_t* mio_reg_int_pol(uint32_t bank) { return mio_reg_bank(0x220UL, bank); }
-static inline volatile uint32_t* mio_reg_int_any(uint32_t bank) { return mio_reg_bank(0x224UL, bank); }
+static inline volatile uint32_t *mio_reg_dirm(uint32_t bank)
+{
+    return mio_reg_bank(0x204UL, bank);
+}
+static inline volatile uint32_t *mio_reg_oen(uint32_t bank)
+{
+    return mio_reg_bank(0x208UL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_mask(uint32_t bank)
+{
+    return mio_reg_bank(0x20CUL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_en(uint32_t bank)
+{
+    return mio_reg_bank(0x210UL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_dis(uint32_t bank)
+{
+    return mio_reg_bank(0x214UL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_stat(uint32_t bank)
+{
+    return mio_reg_bank(0x218UL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_type(uint32_t bank)
+{
+    return mio_reg_bank(0x21CUL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_pol(uint32_t bank)
+{
+    return mio_reg_bank(0x220UL, bank);
+}
+static inline volatile uint32_t *mio_reg_int_any(uint32_t bank)
+{
+    return mio_reg_bank(0x224UL, bank);
+}
 
 /* Bank 0..3 = pin / 32; masked so a wild pin stays inside the block. */
 #define MIO_BANK(pin) (((pin) >> 5UL) & 0x3UL)
@@ -731,22 +763,26 @@ int mio_direction_output(uint32_t pin, int value);
 int mio_direction_input(uint32_t pin);
 
 /* Is the pin configured as an output (DIRM read back)? */
-static inline int mio_is_output(uint32_t pin) {
+static inline int mio_is_output(uint32_t pin)
+{
     return ((*mio_reg_dirm(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Is the output driver on (OEN)? */
-static inline int mio_is_driver_enabled(uint32_t pin) {
+static inline int mio_is_driver_enabled(uint32_t pin)
+{
     return ((*mio_reg_oen(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Switch the output driver on, leaving the direction untouched. */
-static inline void mio_enable_driver(uint32_t pin) {
+static inline void mio_enable_driver(uint32_t pin)
+{
     *mio_reg_oen(MIO_BANK(pin)) |= MIO_BIT(pin);
 }
 
 /* Switch the output driver off (tri-state). */
-static inline void mio_disable_driver(uint32_t pin) {
+static inline void mio_disable_driver(uint32_t pin)
+{
     *mio_reg_oen(MIO_BANK(pin)) &= ~MIO_BIT(pin);
 }
 
@@ -756,41 +792,42 @@ static inline void mio_disable_driver(uint32_t pin) {
 
 /* Drive the pin to value (0 = low, else high) via MASK_DATA: the only
    write path, leaves the bank's other pins alone. */
-static inline void mio_set_value(uint32_t pin, int value) {
+static inline void mio_set_value(uint32_t pin, int value)
+{
     uint32_t bit = MIO_MDATA_BIT(pin);
 
-    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) =
-        ((0xFFFFUL ^ bit) << 16) | ((value != 0) ? bit : 0UL);
+    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) = ((0xFFFFUL ^ bit) << 16) | ((value != 0) ? bit : 0UL);
 }
 
 /* Drive the pin high. */
-static inline void mio_set_high(uint32_t pin) {
+static inline void mio_set_high(uint32_t pin)
+{
     uint32_t bit = MIO_MDATA_BIT(pin);
 
-    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) =
-        ((0xFFFFUL ^ bit) << 16) | bit;
+    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) = ((0xFFFFUL ^ bit) << 16) | bit;
 }
 
 /* Drive the pin low. */
-static inline void mio_set_low(uint32_t pin) {
+static inline void mio_set_low(uint32_t pin)
+{
     uint32_t bit = MIO_MDATA_BIT(pin);
 
-    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) =
-        ((0xFFFFUL ^ bit) << 16);
+    *mio_reg_mdata(MIO_BANK(pin), MIO_MDATA_HALF(pin)) = ((0xFFFFUL ^ bit) << 16);
 }
 
 /* Invert the pin: reads the output latch and writes back the opposite. */
-static inline void mio_toggle(uint32_t pin) {
+static inline void mio_toggle(uint32_t pin)
+{
     uint32_t bank = MIO_BANK(pin);
     uint32_t bit = MIO_MDATA_BIT(pin);
     uint32_t cur = (*mio_reg_data(bank) >> (pin & 0x1FUL)) & 1UL;
 
-    *mio_reg_mdata(bank, MIO_MDATA_HALF(pin)) =
-        ((0xFFFFUL ^ bit) << 16) | ((cur != 0U) ? 0UL : bit);
+    *mio_reg_mdata(bank, MIO_MDATA_HALF(pin)) = ((0xFFFFUL ^ bit) << 16) | ((cur != 0U) ? 0UL : bit);
 }
 
 /* Output latch state (DATA_x), 0 or 1 - what was written, not the pad. */
-static inline int mio_get_output(uint32_t pin) {
+static inline int mio_get_output(uint32_t pin)
+{
     return ((*mio_reg_data(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
@@ -800,7 +837,8 @@ static inline int mio_get_output(uint32_t pin) {
 
 /* Pad level (DATA_x_RO), 0 or 1. Reads the real pin state, so it works
    for inputs and for outputs driven by something else. */
-static inline int mio_get_value(uint32_t pin) {
+static inline int mio_get_value(uint32_t pin)
+{
     return (int)((*mio_reg_data_ro(MIO_BANK(pin)) >> (pin & 0x1FUL)) & 1UL);
 }
 
@@ -809,29 +847,34 @@ static inline int mio_get_value(uint32_t pin) {
 /* ------------------------------------------------------------------ */
 
 /* Unmask the pin's interrupt. */
-static inline void mio_enable_irq(uint32_t pin) {
+static inline void mio_enable_irq(uint32_t pin)
+{
     *mio_reg_int_en(MIO_BANK(pin)) = MIO_BIT(pin);
 }
 
 /* Mask the pin's interrupt. */
-static inline void mio_disable_irq(uint32_t pin) {
+static inline void mio_disable_irq(uint32_t pin)
+{
     *mio_reg_int_dis(MIO_BANK(pin)) = MIO_BIT(pin);
 }
 
 /* Is the pin's interrupt unmasked (INT_MASK, the read-only view)? */
-static inline int mio_irq_enabled(uint32_t pin) {
+static inline int mio_irq_enabled(uint32_t pin)
+{
     return ((*mio_reg_int_mask(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* Is the pin's interrupt pending? INT_STAT only reports unmasked
    sources, so this is "pending and would fire". */
-static inline int mio_irq_pending(uint32_t pin) {
+static inline int mio_irq_pending(uint32_t pin)
+{
     return ((*mio_reg_int_stat(MIO_BANK(pin)) & MIO_BIT(pin)) != 0U) ? 1 : 0;
 }
 
 /* INT_STAT is write-1-to-clear: write the pin's bit to drop it. Must
    be done before returning from the handler, or the IRQ re-fires. */
-static inline void mio_clear_irq(uint32_t pin) {
+static inline void mio_clear_irq(uint32_t pin)
+{
     *mio_reg_int_stat(MIO_BANK(pin)) = MIO_BIT(pin);
 }
 

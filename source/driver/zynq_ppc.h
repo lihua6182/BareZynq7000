@@ -24,12 +24,11 @@
 #include "zynq_common.h"
 
 /* CTRL write command bits (self clearing except RUN). */
-#define COPROC_CMD_RUN      (1U << 0)
-#define COPROC_CMD_RESET    (1U << 1)
-#define COPROC_CMD_FLUSH_TX (1U << 2)
-#define COPROC_CMD_FLUSH_RX (1U << 3)
-#define COPROC_CMD_FLUSH_ALL \
-    (COPROC_CMD_RESET | COPROC_CMD_FLUSH_TX | COPROC_CMD_FLUSH_RX)
+#define COPROC_CMD_RUN       (1U << 0)
+#define COPROC_CMD_RESET     (1U << 1)
+#define COPROC_CMD_FLUSH_TX  (1U << 2)
+#define COPROC_CMD_FLUSH_RX  (1U << 3)
+#define COPROC_CMD_FLUSH_ALL (COPROC_CMD_RESET | COPROC_CMD_FLUSH_TX | COPROC_CMD_FLUSH_RX)
 
 /* STATUS bits. */
 #define COPROC_STAT_RUNNING   (1U << 0)
@@ -48,7 +47,8 @@
 #define COPROC_FSTAT_TXCNT(v) (((v) >> 4) & 0xFFU)
 #define COPROC_FSTAT_RXCNT(v) (((v) >> 12) & 0xFFU)
 
-typedef struct {              /* proto_coproc register window (64K) */
+typedef struct
+{                             /* proto_coproc register window (64K) */
     __IO uint32_t PROG[1024]; /* 0x0000 program memory, 1024 x 32 bit */
     __O uint32_t TXDATA;      /* 0x1000 push into the TX FIFO */
     __I uint32_t RXDATA;      /* 0x1004 pop from the RX FIFO */
@@ -72,20 +72,24 @@ typedef struct {              /* proto_coproc register window (64K) */
 /* ------------------------------------------------------------------ */
 
 /* Push one word into the TX FIFO; check coproc_tx_ready() first. */
-static inline void coproc_tx_push(COPROC_Type* c, uint32_t w) {
+static inline void coproc_tx_push(COPROC_Type *c, uint32_t w)
+{
     c->TXDATA = w;
 }
 
 /* Pop one word from the RX FIFO; check coproc_rx_ready() first. */
-static inline uint32_t coproc_rx_pop(COPROC_Type* c) {
+static inline uint32_t coproc_rx_pop(COPROC_Type *c)
+{
     return c->RXDATA;
 }
 
-static inline bool coproc_tx_ready(COPROC_Type* c) {
+static inline bool coproc_tx_ready(COPROC_Type *c)
+{
     return (c->STATUS & COPROC_STAT_TX_FULL) == 0U;
 }
 
-static inline bool coproc_rx_ready(COPROC_Type* c) {
+static inline bool coproc_rx_ready(COPROC_Type *c)
+{
     return (c->STATUS & COPROC_STAT_RX_EMPTY) == 0U;
 }
 
@@ -94,23 +98,26 @@ static inline bool coproc_rx_ready(COPROC_Type* c) {
 /* ------------------------------------------------------------------ */
 
 /* Issue a CTRL command (RUN bit persists, RESET/FLUSH self clear). */
-static inline void coproc_cmd(COPROC_Type* c, uint32_t cmd) {
+static inline void coproc_cmd(COPROC_Type *c, uint32_t cmd)
+{
     c->CTRL = cmd;
 }
 
-static inline bool coproc_is_halted(COPROC_Type* c) {
+static inline bool coproc_is_halted(COPROC_Type *c)
+{
     return (c->STATUS & COPROC_STAT_HALTED) != 0U;
 }
 
 /* Blocking helpers (timeouts on the 1 ms tick) live in zynq_ppc.c. */
-bool coproc_wait_halt(COPROC_Type* c, uint32_t timeout_ms);
-bool coproc_tx_push_wait(COPROC_Type* c, uint32_t w, uint32_t timeout_ms);
+bool coproc_wait_halt(COPROC_Type *c, uint32_t timeout_ms);
+bool coproc_tx_push_wait(COPROC_Type *c, uint32_t w, uint32_t timeout_ms);
 
 /* Load a program image (word array) into the program BRAM. */
-static inline void coproc_load(COPROC_Type* c, const uint32_t* img,
-                               uint32_t words) {
+static inline void coproc_load(COPROC_Type *c, const uint32_t *img, uint32_t words)
+{
     uint32_t i;
-    for (i = 0U; i < words; i++) {
+    for (i = 0U; i < words; i++)
+    {
         c->PROG[i] = img[i];
     }
 }

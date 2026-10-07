@@ -20,8 +20,8 @@
 extern int __io_putchar(int ch) __attribute__((weak));
 extern int __io_getchar(void) __attribute__((weak));
 
-char* __env[1] = {0};
-char** environ = __env;
+char *__env[1] = {0};
+char **environ = __env;
 
 /* Functions */
 
@@ -30,14 +30,16 @@ char** environ = __env;
  *
  * No-op on this target: there is no debugger host to talk to.
  */
-void initialise_monitor_handles() {
+void initialise_monitor_handles()
+{
 }
 
 /**
  * @brief  Get the process ID.
  * @return Always 1: there is a single "process".
  */
-int _getpid(void) {
+int _getpid(void)
+{
     return 1;
 }
 
@@ -47,7 +49,8 @@ int _getpid(void) {
  * @param  sig Signal number (unused).
  * @return Always -1 with errno set to EINVAL.
  */
-int _kill(int pid, int sig) {
+int _kill(int pid, int sig)
+{
     (void)pid;
     (void)sig;
     errno = EINVAL;
@@ -60,9 +63,11 @@ int _kill(int pid, int sig) {
  *
  * Hangs forever: there is nowhere to exit to on a bare-metal target.
  */
-void _exit(int status) {
+void _exit(int status)
+{
     _kill(status, -1);
-    while (1) {
+    while (1)
+    {
     } /* Make sure we hang here */
 }
 
@@ -76,11 +81,13 @@ void _exit(int status) {
  * Everything comes from __io_getchar(); override that weak symbol to
  * wire the console to a real UART.
  */
-__attribute__((weak)) int _read(int file, char* ptr, int len) {
+__attribute__((weak)) int _read(int file, char *ptr, int len)
+{
     (void)file;
     int DataIdx;
 
-    for (DataIdx = 0; DataIdx < len; DataIdx++) {
+    for (DataIdx = 0; DataIdx < len; DataIdx++)
+    {
         *ptr++ = __io_getchar();
     }
 
@@ -97,11 +104,13 @@ __attribute__((weak)) int _read(int file, char* ptr, int len) {
  * Everything goes to __io_putchar(); override that weak symbol to wire
  * the console to a real UART.
  */
-__attribute__((weak)) int _write(int file, char* ptr, int len) {
+__attribute__((weak)) int _write(int file, char *ptr, int len)
+{
     (void)file;
     int DataIdx;
 
-    for (DataIdx = 0; DataIdx < len; DataIdx++) {
+    for (DataIdx = 0; DataIdx < len; DataIdx++)
+    {
         __io_putchar(*ptr++);
     }
     return len;
@@ -112,7 +121,8 @@ __attribute__((weak)) int _write(int file, char* ptr, int len) {
  * @param  file File descriptor (unused).
  * @return Always -1.
  */
-int _close(int file) {
+int _close(int file)
+{
     (void)file;
     return -1;
 }
@@ -123,7 +133,8 @@ int _close(int file) {
  * @param  st   Out: status; always reports a character device.
  * @return Always 0.
  */
-int _fstat(int file, struct stat* st) {
+int _fstat(int file, struct stat *st)
+{
     (void)file;
     st->st_mode = S_IFCHR;
     return 0;
@@ -134,7 +145,8 @@ int _fstat(int file, struct stat* st) {
  * @param  file File descriptor (unused).
  * @return Always 1.
  */
-int _isatty(int file) {
+int _isatty(int file)
+{
     (void)file;
     return 1;
 }
@@ -146,7 +158,8 @@ int _isatty(int file) {
  * @param  dir  Whence (unused).
  * @return Always 0.
  */
-int _lseek(int file, int ptr, int dir) {
+int _lseek(int file, int ptr, int dir)
+{
     (void)file;
     (void)ptr;
     (void)dir;
@@ -159,7 +172,8 @@ int _lseek(int file, int ptr, int dir) {
  * @param  flags Open flags (unused).
  * @return Always -1: there is no filesystem.
  */
-int _open(char* path, int flags, ...) {
+int _open(char *path, int flags, ...)
+{
     (void)path;
     (void)flags;
     /* Pretend like we always fail */
@@ -171,7 +185,8 @@ int _open(char* path, int flags, ...) {
  * @param  status Out: exit status (unused).
  * @return Always -1 with errno set to ECHILD.
  */
-int _wait(int* status) {
+int _wait(int *status)
+{
     (void)status;
     errno = ECHILD;
     return -1;
@@ -182,7 +197,8 @@ int _wait(int* status) {
  * @param  name Path name (unused).
  * @return Always -1 with errno set to ENOENT.
  */
-int _unlink(char* name) {
+int _unlink(char *name)
+{
     (void)name;
     errno = ENOENT;
     return -1;
@@ -193,7 +209,8 @@ int _unlink(char* name) {
  * @param  buf Out: times (unused).
  * @return Always -1.
  */
-int _times(struct tms* buf) {
+int _times(struct tms *buf)
+{
     (void)buf;
     return -1;
 }
@@ -204,7 +221,8 @@ int _times(struct tms* buf) {
  * @param  st   Out: status; always reports a character device.
  * @return Always 0.
  */
-int _stat(char* file, struct stat* st) {
+int _stat(char *file, struct stat *st)
+{
     (void)file;
     st->st_mode = S_IFCHR;
     return 0;
@@ -216,7 +234,8 @@ int _stat(char* file, struct stat* st) {
  * @param  new New path (unused).
  * @return Always -1 with errno set to EMLINK.
  */
-int _link(char* old, char* new) {
+int _link(char *old, char *new)
+{
     (void)old;
     (void)new;
     errno = EMLINK;
@@ -227,7 +246,8 @@ int _link(char* old, char* new) {
  * @brief  Create a child process.
  * @return Always -1 with errno set to EAGAIN.
  */
-int _fork(void) {
+int _fork(void)
+{
     errno = EAGAIN;
     return -1;
 }
@@ -239,7 +259,8 @@ int _fork(void) {
  * @param  env  Environment (unused).
  * @return Always -1 with errno set to ENOMEM.
  */
-int _execve(char* name, char** argv, char** env) {
+int _execve(char *name, char **argv, char **env)
+{
     (void)name;
     (void)argv;
     (void)env;

@@ -17,17 +17,20 @@ extern uint32_t __heap_end__;
  * @param  incr Bytes to add.
  * @return Previous heap end, or (void*)-1 with errno = ENOMEM.
  */
-void* _sbrk(ptrdiff_t incr) {
-    static uint8_t* heap_end;
-    uint8_t* prev;
+void *_sbrk(ptrdiff_t incr)
+{
+    static uint8_t *heap_end;
+    uint8_t *prev;
 
-    if (heap_end == 0) {
-        heap_end = (uint8_t*)&__heap_start__;
+    if (heap_end == 0)
+    {
+        heap_end = (uint8_t *)&__heap_start__;
     }
 
-    if ((heap_end + incr) > (uint8_t*)&__heap_end__) {
+    if ((heap_end + incr) > (uint8_t *)&__heap_end__)
+    {
         errno = ENOMEM;
-        return (void*)-1;
+        return (void *)-1;
     }
 
     prev = heap_end;

@@ -15,7 +15,8 @@
  * @brief  Ungate the GPIO ref clock (APER_CLK_CTRL bit 22); call once
  *         before any pin access - gated, every read returns 0.
  */
-void mio_enable_clock(void) {
+void mio_enable_clock(void)
+{
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->APER_CLK_CTRL |= MIO_CLK_GATE_BIT;
     SLCR->LOCK = SLCR_LOCK_KEY;
@@ -24,7 +25,8 @@ void mio_enable_clock(void) {
 /**
  * @brief  Gate the GPIO ref clock again; pin configuration is lost.
  */
-void mio_disable_clock(void) {
+void mio_disable_clock(void)
+{
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->APER_CLK_CTRL &= ~MIO_CLK_GATE_BIT;
     SLCR->LOCK = SLCR_LOCK_KEY;
@@ -39,11 +41,13 @@ void mio_disable_clock(void) {
  * @note Drives the level first, then switches: the other order glitches
  *       the pad with the stale output latch.
  */
-int mio_direction_output(uint32_t pin, int value) {
+int mio_direction_output(uint32_t pin, int value)
+{
     uint32_t bank;
     uint32_t bit;
 
-    if (pin >= MIO_PIN_COUNT) {
+    if (pin >= MIO_PIN_COUNT)
+    {
         return -1;
     }
     bank = MIO_BANK(pin);
@@ -60,11 +64,13 @@ int mio_direction_output(uint32_t pin, int value) {
  * @param  pin GPIO pin, 0..117.
  * @return 0 on success, -1 when pin is out of range.
  */
-int mio_direction_input(uint32_t pin) {
+int mio_direction_input(uint32_t pin)
+{
     uint32_t bank;
     uint32_t bit;
 
-    if (pin >= MIO_PIN_COUNT) {
+    if (pin >= MIO_PIN_COUNT)
+    {
         return -1;
     }
     bank = MIO_BANK(pin);
@@ -80,49 +86,48 @@ int mio_direction_input(uint32_t pin) {
  * @param  pin  GPIO pin, 0..117.
  * @param  type MIO_IRQ_TYPE_*; an unknown value changes nothing.
  */
-void mio_set_irq_type(uint32_t pin, uint32_t type) {
+void mio_set_irq_type(uint32_t pin, uint32_t type)
+{
     uint32_t bank = MIO_BANK(pin);
     uint32_t bit = MIO_BIT(pin);
     uint32_t int_type;
     uint32_t int_polarity;
     uint32_t int_any;
 
-    switch (type) {
-        case MIO_IRQ_TYPE_LEVEL_LOW:
-            int_type = 0U;
-            int_polarity = 0U;
-            int_any = 0U;
-            break;
-        case MIO_IRQ_TYPE_LEVEL_HIGH:
-            int_type = 0U;
-            int_polarity = 1U;
-            int_any = 0U;
-            break;
-        case MIO_IRQ_TYPE_EDGE_FALLING:
-            int_type = 1U;
-            int_polarity = 0U;
-            int_any = 0U;
-            break;
-        case MIO_IRQ_TYPE_EDGE_RISING:
-            int_type = 1U;
-            int_polarity = 1U;
-            int_any = 0U;
-            break;
-        case MIO_IRQ_TYPE_EDGE_BOTH:
-            int_type = 1U;
-            int_polarity = 1U;
-            int_any = 1U;
-            break;
-        default:
-            return;
+    switch (type)
+    {
+    case MIO_IRQ_TYPE_LEVEL_LOW:
+        int_type = 0U;
+        int_polarity = 0U;
+        int_any = 0U;
+        break;
+    case MIO_IRQ_TYPE_LEVEL_HIGH:
+        int_type = 0U;
+        int_polarity = 1U;
+        int_any = 0U;
+        break;
+    case MIO_IRQ_TYPE_EDGE_FALLING:
+        int_type = 1U;
+        int_polarity = 0U;
+        int_any = 0U;
+        break;
+    case MIO_IRQ_TYPE_EDGE_RISING:
+        int_type = 1U;
+        int_polarity = 1U;
+        int_any = 0U;
+        break;
+    case MIO_IRQ_TYPE_EDGE_BOTH:
+        int_type = 1U;
+        int_polarity = 1U;
+        int_any = 1U;
+        break;
+    default:
+        return;
     }
 
-    *mio_reg_int_type(bank) =
-        (*mio_reg_int_type(bank) & ~bit) | ((int_type != 0U) ? bit : 0UL);
-    *mio_reg_int_pol(bank) =
-        (*mio_reg_int_pol(bank) & ~bit) | ((int_polarity != 0U) ? bit : 0UL);
-    *mio_reg_int_any(bank) =
-        (*mio_reg_int_any(bank) & ~bit) | ((int_any != 0U) ? bit : 0UL);
+    *mio_reg_int_type(bank) = (*mio_reg_int_type(bank) & ~bit) | ((int_type != 0U) ? bit : 0UL);
+    *mio_reg_int_pol(bank) = (*mio_reg_int_pol(bank) & ~bit) | ((int_polarity != 0U) ? bit : 0UL);
+    *mio_reg_int_any(bank) = (*mio_reg_int_any(bank) & ~bit) | ((int_any != 0U) ? bit : 0UL);
 }
 
 /* ------------------------------------------------------------------ */
@@ -136,8 +141,10 @@ void mio_set_irq_type(uint32_t pin, uint32_t type) {
  * @param  pad MIO pad, 0..53.
  * @return Pointer to SLCR.MIO_PIN_xx, or NULL when out of range.
  */
-static volatile uint32_t* mio_pad_reg(uint32_t pad) {
-    if (pad >= MIO_PAD_COUNT) {
+static volatile uint32_t *mio_pad_reg(uint32_t pad)
+{
+    if (pad >= MIO_PAD_COUNT)
+    {
         return NULL;
     }
     return &SLCR->MIO_PIN_00 + pad;
@@ -151,10 +158,12 @@ static volatile uint32_t* mio_pad_reg(uint32_t pad) {
  * @param  value Replacement bits, already shifted into position.
  * @return 0 on success, -1 when out of range.
  */
-static int mio_pad_rmw(uint32_t pad, uint32_t mask, uint32_t value) {
-    volatile uint32_t* reg = mio_pad_reg(pad);
+static int mio_pad_rmw(uint32_t pad, uint32_t mask, uint32_t value)
+{
+    volatile uint32_t *reg = mio_pad_reg(pad);
 
-    if (reg == NULL) {
+    if (reg == NULL)
+    {
         return -1;
     }
 
@@ -173,10 +182,12 @@ static int mio_pad_rmw(uint32_t pad, uint32_t mask, uint32_t value) {
  * @note Plain store - pad options revert to reset values, set them
  *       again afterwards.
  */
-int mio_set_function(uint32_t pad, uint32_t fn) {
-    volatile uint32_t* reg = mio_pad_reg(pad);
+int mio_set_function(uint32_t pad, uint32_t fn)
+{
+    volatile uint32_t *reg = mio_pad_reg(pad);
 
-    if (reg == NULL) {
+    if (reg == NULL)
+    {
         return -1;
     }
 
@@ -191,7 +202,8 @@ int mio_set_function(uint32_t pad, uint32_t fn) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_enable_pull_up(uint32_t pad) {
+int mio_enable_pull_up(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_PULLUP, MIO_PIN_OPT_ENA_PULLUP);
 }
 
@@ -200,7 +212,8 @@ int mio_enable_pull_up(uint32_t pad) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_disable_pull_up(uint32_t pad) {
+int mio_disable_pull_up(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_PULLUP, 0UL);
 }
 
@@ -209,7 +222,8 @@ int mio_disable_pull_up(uint32_t pad) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_enable_receiver(uint32_t pad) {
+int mio_enable_receiver(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_DIS_RCVR, 0UL);
 }
 
@@ -219,7 +233,8 @@ int mio_enable_receiver(uint32_t pad) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_disable_receiver(uint32_t pad) {
+int mio_disable_receiver(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_DIS_RCVR, MIO_PIN_OPT_DIS_RCVR);
 }
 
@@ -228,7 +243,8 @@ int mio_disable_receiver(uint32_t pad) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_set_slew_fast(uint32_t pad) {
+int mio_set_slew_fast(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_SPEED_FAST, MIO_PIN_OPT_ENA_SPEED_FAST);
 }
 
@@ -237,6 +253,7 @@ int mio_set_slew_fast(uint32_t pad) {
  * @param  pad MIO pad, 0..53.
  * @return 0 on success, -1 when out of range.
  */
-int mio_set_slew_slow(uint32_t pad) {
+int mio_set_slew_slow(uint32_t pad)
+{
     return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_SPEED_FAST, 0UL);
 }

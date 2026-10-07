@@ -10,6 +10,7 @@ target_sources("driver"
     "zynq_ppc.c"
     "zynq_usb.c"
     "zynq_dma.c"
+    "zynq_swd.c"
 )
 
 target_include_directories("driver"

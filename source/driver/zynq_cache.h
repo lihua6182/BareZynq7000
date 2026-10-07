@@ -23,13 +23,13 @@
 #include <stddef.h>
 
 /* CPU -> DMA（中央互连主设备）：L1+L2 双层清写，数据落内存。 */
-void cache_clean(const void* addr, size_t size);
+void cache_clean(const void *addr, size_t size);
 
 /* DMA -> CPU（中央互连主设备）：丢弃 CPU 侧 L1/L2 行，后续读命中 DMA
  * 写入的内存。丢弃语义，DMA 专用缓冲。 */
-void cache_invalidate(const void* addr, size_t size);
+void cache_invalidate(const void *addr, size_t size);
 
 /* CPU -> DMA（ACP 主设备，如 DevC/PCAP）：只清 L1，L2 一致性由硬件保证。 */
-void cache_clean_acp(const void* addr, size_t size);
+void cache_clean_acp(const void *addr, size_t size);
 
 #endif /* ZYNQ_CACHE_H */

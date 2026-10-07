@@ -17,10 +17,12 @@ static volatile uint32_t tick_ms;
  * @note Must not live in .fast: the section starts at address 0, and
  *       irq_attach() rejects a NULL-looking pointer.
  */
-static void tick_irq_handler(void) {
+static void tick_irq_handler(void)
+{
     uint32_t flags = TTC0->INTERRUPT_REGISTER_1;
 
-    if ((flags & 0x1UL) != 0U) { /* interval event */
+    if ((flags & 0x1UL) != 0U)
+    { /* interval event */
         tick_ms++;
     }
 }
@@ -29,7 +31,8 @@ static void tick_irq_handler(void) {
  * @brief  Start the 1 ms tick counter: program while stopped, drop stale
  *         state first (a JTAG reload resets the CPU but not the TTC).
  */
-void tick_init(void) {
+void tick_init(void)
+{
     struct clock_freqs clocks;
 
     clock_freqs_get(&clocks);
@@ -41,7 +44,8 @@ void tick_init(void) {
     TTC0->INTERVAL_COUNTER_1 = (clocks.cpu_1x / 2UL / 1000UL) - 1UL;
 
     /* Bind before arming, or the level source re-fires forever. */
-    if (irq_attach(Ttc0Timer0_IRQn, tick_irq_handler) == 0) {
+    if (irq_attach(Ttc0Timer0_IRQn, tick_irq_handler) == 0)
+    {
         irq_enable(Ttc0Timer0_IRQn);
         TTC0->INTERRUPT_ENABLE_1 = 1UL; /* interval interrupt */
     }
@@ -54,10 +58,12 @@ void tick_init(void) {
  *         rollover-safe.
  * @param  ms Milliseconds to wait; 0 returns immediately.
  */
-void tick_mdelay(uint32_t ms) {
+void tick_mdelay(uint32_t ms)
+{
     uint32_t start = tick_ms;
 
-    while ((tick_ms - start) < ms) {
+    while ((tick_ms - start) < ms)
+    {
     }
 }
 
@@ -65,6 +71,7 @@ void tick_mdelay(uint32_t ms) {
  * @brief  Read the tick counter.
  * @return Milliseconds since tick_init().
  */
-uint32_t tick_get(void) {
+uint32_t tick_get(void)
+{
     return tick_ms;
 }

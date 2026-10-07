@@ -10,10 +10,12 @@
  * @param  ctrl Value of ARM/DDR/IO_PLL_CTRL (FDIV [18:12], bypass [4]).
  * @return PS_CLK x FDIV, or PS_CLK while bypass is forced.
  */
-static uint32_t pll_freq_from_ctrl(uint32_t ctrl) {
+static uint32_t pll_freq_from_ctrl(uint32_t ctrl)
+{
     uint32_t fdiv = (ctrl >> 12) & 0x7FU;
 
-    if (fdiv == 0U || (ctrl & (1UL << 4)) != 0U) {
+    if (fdiv == 0U || (ctrl & (1UL << 4)) != 0U)
+    {
         return PS_CLK_HZ;
     }
     return (uint32_t)((uint64_t)PS_CLK_HZ * (uint64_t)fdiv);
@@ -22,35 +24,40 @@ static uint32_t pll_freq_from_ctrl(uint32_t ctrl) {
 /**
  * @brief  Peripheral clock mux: SRCSEL[5:4] 0x = IO, 2 = ARM, 3 = DDR PLL.
  */
-static uint32_t periph_src_freq(uint32_t srcsel, const struct clock_freqs* freqs) {
-    switch (srcsel) {
-        case 2U:
-            return freqs->arm_pll;
-        case 3U:
-            return freqs->ddr_pll;
-        default:
-            return freqs->io_pll;
+static uint32_t periph_src_freq(uint32_t srcsel, const struct clock_freqs *freqs)
+{
+    switch (srcsel)
+    {
+    case 2U:
+        return freqs->arm_pll;
+    case 3U:
+        return freqs->ddr_pll;
+    default:
+        return freqs->io_pll;
     }
 }
 
 /**
  * @brief  CPU clock mux: SRCSEL[5:4] 0x = ARM, 2 = DDR, 3 = IO PLL.
  */
-static uint32_t cpu_src_freq(uint32_t srcsel, const struct clock_freqs* freqs) {
-    switch (srcsel) {
-        case 2U:
-            return freqs->ddr_pll;
-        case 3U:
-            return freqs->io_pll;
-        default:
-            return freqs->arm_pll;
+static uint32_t cpu_src_freq(uint32_t srcsel, const struct clock_freqs *freqs)
+{
+    switch (srcsel)
+    {
+    case 2U:
+        return freqs->ddr_pll;
+    case 3U:
+        return freqs->io_pll;
+    default:
+        return freqs->arm_pll;
     }
 }
 
 /**
  * @brief  Decode a one-based 6-bit divisor field; 0 bypasses (returns 1).
  */
-static uint32_t divisor_from_field(uint32_t ctrl, uint32_t shift) {
+static uint32_t divisor_from_field(uint32_t ctrl, uint32_t shift)
+{
     uint32_t divisor = (ctrl >> shift) & 0x3FU;
 
     return (divisor != 0U) ? divisor : 1U;
@@ -59,7 +66,8 @@ static uint32_t divisor_from_field(uint32_t ctrl, uint32_t shift) {
 /**
  * @brief  Peripheral clock with one divider: mux / DIVISOR[13:8].
  */
-static uint32_t periph_ref_freq(uint32_t ctrl, const struct clock_freqs* freqs) {
+static uint32_t periph_ref_freq(uint32_t ctrl, const struct clock_freqs *freqs)
+{
     uint32_t src = periph_src_freq((ctrl >> 4) & 0x3U, freqs);
 
     return src / divisor_from_field(ctrl, 8U);
@@ -69,7 +77,8 @@ static uint32_t periph_ref_freq(uint32_t ctrl, const struct clock_freqs* freqs) 
  * @brief  Peripheral clock with cascaded dividers DIV0[13:8] / DIV1[25:20]
  *         (GEM, CAN, FCLKs).
  */
-static uint32_t periph_ref_freq_cascaded(uint32_t ctrl, const struct clock_freqs* freqs) {
+static uint32_t periph_ref_freq_cascaded(uint32_t ctrl, const struct clock_freqs *freqs)
+{
     uint32_t src = periph_src_freq((ctrl >> 4) & 0x3U, freqs);
 
     return src / divisor_from_field(ctrl, 8U) / divisor_from_field(ctrl, 20U);
@@ -80,7 +89,8 @@ static uint32_t periph_ref_freq_cascaded(uint32_t ctrl, const struct clock_freqs
  *         correct after sys_clock_init() reprogrammed the PLLs.
  * @param  freqs Out: every frequency in struct clock_freqs.
  */
-void clock_freqs_get(struct clock_freqs* freqs) {
+void clock_freqs_get(struct clock_freqs *freqs)
+{
     uint32_t ctrl;
     uint32_t ratio_621;
 
@@ -129,16 +139,18 @@ void clock_freqs_get(struct clock_freqs* freqs) {
  *         not contiguous: each route is {CLK_CTRL, THR_CTRL, THR_CNT,
  *         THR_STA}).
  */
-static volatile uint32_t* fclk_reg(uint32_t fclk) {
-    switch (fclk) {
-        case 0U:
-            return &SLCR->FPGA0_CLK_CTRL;
-        case 1U:
-            return &SLCR->FPGA1_CLK_CTRL;
-        case 2U:
-            return &SLCR->FPGA2_CLK_CTRL;
-        default:
-            return &SLCR->FPGA3_CLK_CTRL;
+static volatile uint32_t *fclk_reg(uint32_t fclk)
+{
+    switch (fclk)
+    {
+    case 0U:
+        return &SLCR->FPGA0_CLK_CTRL;
+    case 1U:
+        return &SLCR->FPGA1_CLK_CTRL;
+    case 2U:
+        return &SLCR->FPGA2_CLK_CTRL;
+    default:
+        return &SLCR->FPGA3_CLK_CTRL;
     }
 }
 
@@ -151,14 +163,14 @@ static volatile uint32_t* fclk_reg(uint32_t fclk) {
  * @param  enable true = clock on.
  * @return true on success, false on any out-of-range argument.
  */
-bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
-                       uint32_t div0, uint32_t div1, bool enable) {
-    volatile uint32_t* clk_ctrl;
+bool clock_fclk_config(enum fclk fclk, enum fclk_src src, uint32_t div0, uint32_t div1, bool enable)
+{
+    volatile uint32_t *clk_ctrl;
     uint32_t value;
 
-    if (((uint32_t)fclk > 3U) ||
-        ((src != FCLK_SRC_IO) && (src != FCLK_SRC_ARM) && (src != FCLK_SRC_DDR)) ||
-        (div0 == 0U) || (div0 > 63U) || (div1 == 0U) || (div1 > 63U)) {
+    if (((uint32_t)fclk > 3U) || ((src != FCLK_SRC_IO) && (src != FCLK_SRC_ARM) && (src != FCLK_SRC_DDR)) ||
+        (div0 == 0U) || (div0 > 63U) || (div1 == 0U) || (div1 > 63U))
+    {
         return false;
     }
 
@@ -168,10 +180,8 @@ bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
        dividers are (ch. 25). One unlock/lock window for it all. */
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     value = *clk_ctrl & ~((0x3FUL << 8) | (0x3FUL << 20) | (0x3UL << 4) | 0x1UL);
-    value |= ((div0 & 0x3FUL) << 8) |
-             ((div1 & 0x3FUL) << 20) |
-             ((uint32_t)src << 4) |
-             ((enable != false) ? 0x1UL : 0x0UL);
+    value |=
+        ((div0 & 0x3FUL) << 8) | ((div1 & 0x3FUL) << 20) | ((uint32_t)src << 4) | ((enable != false) ? 0x1UL : 0x0UL);
     *clk_ctrl = value;
     SLCR->LOCK = SLCR_LOCK_KEY;
 
@@ -183,18 +193,21 @@ bool clock_fclk_config(enum fclk fclk, enum fclk_src src,
  * @param  fclk   FCLK0..FCLK3.
  * @param  enable true to gate the clock on, false to gate it off.
  */
-void clock_fclk_enable(enum fclk fclk, bool enable) {
-    volatile uint32_t* clk_ctrl;
+void clock_fclk_enable(enum fclk fclk, bool enable)
+{
+    volatile uint32_t *clk_ctrl;
     uint32_t value;
 
-    if ((uint32_t)fclk > 3U) {
+    if ((uint32_t)fclk > 3U)
+    {
         return;
     }
     clk_ctrl = fclk_reg((uint32_t)fclk);
 
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     value = *clk_ctrl & ~0x1UL;
-    if (enable != false) {
+    if (enable != false)
+    {
         value |= 0x1UL;
     }
     *clk_ctrl = value;
@@ -207,15 +220,18 @@ void clock_fclk_enable(enum fclk fclk, bool enable) {
  * @return The configured frequency in Hz, or 0 when the route is gated
  *         off (the PL then sees no clock at all).
  */
-uint32_t clock_fclk_freq_get(enum fclk fclk) {
-    volatile uint32_t* clk_ctrl;
+uint32_t clock_fclk_freq_get(enum fclk fclk)
+{
+    volatile uint32_t *clk_ctrl;
     struct clock_freqs freqs;
 
-    if ((uint32_t)fclk > 3U) {
+    if ((uint32_t)fclk > 3U)
+    {
         return 0U;
     }
     clk_ctrl = fclk_reg((uint32_t)fclk);
-    if ((*clk_ctrl & 0x1UL) == 0U) {
+    if ((*clk_ctrl & 0x1UL) == 0U)
+    {
         return 0U; /* gated off */
     }
 

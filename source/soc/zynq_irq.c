@@ -29,13 +29,16 @@ void irq_handler(void) __attribute__((interrupt("IRQ"), target("general-regs-onl
  * bank; GCC only warns about that from command-line options, hence the
  * pragma above.
  */
-void irq_handler(void) {
+void irq_handler(void)
+{
     uint32_t id = (uint32_t)GIC_AcknowledgePending();
     irq_handler_t handler;
 
-    if (id < IRQ_ID_COUNT) {
+    if (id < IRQ_ID_COUNT)
+    {
         handler = irq_handlers[id];
-        if (handler != NULL) {
+        if (handler != NULL)
+        {
             handler();
             __DSB(); /* source flag clear completes before EOI */
         }
@@ -50,8 +53,10 @@ void irq_handler(void) {
  * @param  handler Function to call; must not be NULL.
  * @return 0 on success, -1 on bad id or NULL handler.
  */
-int irq_attach(uint32_t id, irq_handler_t handler) {
-    if ((id >= IRQ_ID_COUNT) || (handler == NULL)) {
+int irq_attach(uint32_t id, irq_handler_t handler)
+{
+    if ((id >= IRQ_ID_COUNT) || (handler == NULL))
+    {
         return -1;
     }
 
@@ -65,8 +70,10 @@ int irq_attach(uint32_t id, irq_handler_t handler) {
  *
  * The source stays enabled and reverts to dismissed-with-EOI-only.
  */
-void irq_detach(uint32_t id) {
-    if (id >= IRQ_ID_COUNT) {
+void irq_detach(uint32_t id)
+{
+    if (id >= IRQ_ID_COUNT)
+    {
         return;
     }
     irq_handlers[id] = NULL;
@@ -80,12 +87,14 @@ void irq_detach(uint32_t id) {
  * (slcr A9_CPU_RST_CTRL bit 8). FIQEn stays clear (Group 0 forwards on
  * the IRQ input), CPSR.I unmasked, FIQ stays masked.
  */
-void irq_init(void) {
+void irq_init(void)
+{
     uint32_t i;
 
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->A9_CPU_RST_CTRL |= (1UL << 8); /* PERI_RST */
-    for (i = 0U; i < 100U; i++) {
+    for (i = 0U; i < 100U; i++)
+    {
         __asm volatile("nop");
     }
     SLCR->A9_CPU_RST_CTRL &= ~(1UL << 8);
@@ -111,14 +120,17 @@ void irq_init(void) {
  * but is never forwarded (cf. XScuGic_DistInit stamping CPU0 into every
  * SPI). PPI/SGI registers (id < 32) are banked per CPU, no target.
  */
-void irq_enable(uint32_t id) {
-    if (id >= IRQ_ID_COUNT) {
+void irq_enable(uint32_t id)
+{
+    if (id >= IRQ_ID_COUNT)
+    {
         return;
     }
 
     GIC_SetGroup((IRQn_Type)id, 0U);
     GIC_SetPriority((IRQn_Type)id, IRQ_DEFAULT_PRIORITY);
-    if (id >= 32U) {
+    if (id >= 32U)
+    {
         GIC_SetTarget((IRQn_Type)id, 1U); /* route the SPI to CPU0 */
     }
     GIC_EnableIRQ((IRQn_Type)id);
@@ -130,8 +142,10 @@ void irq_enable(uint32_t id) {
  *
  * Clears the distributor enable only; the binding survives.
  */
-void irq_disable(uint32_t id) {
-    if (id >= IRQ_ID_COUNT) {
+void irq_disable(uint32_t id)
+{
+    if (id >= IRQ_ID_COUNT)
+    {
         return;
     }
     GIC_DisableIRQ((IRQn_Type)id);

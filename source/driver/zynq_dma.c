@@ -11,13 +11,13 @@
 #define DMAC_CHANNEL_COUNT (8u)
 
 /* PL330 指令操作码 (ARM DDI0424 指令集)。 */
-#define DMA_OP_END  (0x00u) /* DMAEND:  结束线程                        */
-#define DMA_OP_LD   (0x04u) /* DMALD:  按 CCR 装载一个突发              */
-#define DMA_OP_ST   (0x08u) /* DMAST:  按 CCR 存储一个突发              */
-#define DMA_OP_WMB  (0x13u) /* DMAWMB: 写屏障, 保证 ST 对总线可见       */
-#define DMA_OP_GO   (0xA0u) /* DMAGO:  (manager 经 debug 接口) 启动通道 */
-#define DMA_OP_MOV  (0xBCu) /* DMAMOV: 写 SAR/CCR/DAR 之一, imm32 小端  */
-#define DMA_OP_SEV  (0x34u) /* DMASEV: 发事件, 事件号 = 通道号          */
+#define DMA_OP_END (0x00u) /* DMAEND:  结束线程                        */
+#define DMA_OP_LD  (0x04u) /* DMALD:  按 CCR 装载一个突发              */
+#define DMA_OP_ST  (0x08u) /* DMAST:  按 CCR 存储一个突发              */
+#define DMA_OP_WMB (0x13u) /* DMAWMB: 写屏障, 保证 ST 对总线可见       */
+#define DMA_OP_GO  (0xA0u) /* DMAGO:  (manager 经 debug 接口) 启动通道 */
+#define DMA_OP_MOV (0xBCu) /* DMAMOV: 写 SAR/CCR/DAR 之一, imm32 小端  */
+#define DMA_OP_SEV (0x34u) /* DMASEV: 发事件, 事件号 = 通道号          */
 
 /* DMAMOV 的目的寄存器操作数。 */
 #define DMA_MOV_SAR (0x0u)
@@ -31,13 +31,9 @@
  * 4 字节 beat、双端自增、突发长度 beat_count (1..16); prot=0 (安全
  * 属性数据访问, 上板定案: 通道由安全 manager 以 ns=0 启动, 互连把
  * AxPROT[1]=1 的非安全数据访问回 SLVERR - data_read_err), cache=0。 */
-#define DMA_CCR(beat_count)                       \
-    ((1UL << 0) | (2UL << 1) |                    \
-     ((((uint32_t)(beat_count)) - 1UL) << 4) |    \
-     (0UL << 8) |                                 \
-     (1UL << 14) | (2UL << 15) |                  \
-     ((((uint32_t)(beat_count)) - 1UL) << 18) |   \
-     (0UL << 22))
+#define DMA_CCR(beat_count)                                                                                            \
+    ((1UL << 0) | (2UL << 1) | ((((uint32_t)(beat_count)) - 1UL) << 4) | (0UL << 8) | (1UL << 14) | (2UL << 15) |      \
+     ((((uint32_t)(beat_count)) - 1UL) << 18) | (0UL << 22))
 
 /* 最近一次超时的故障现场 (FTC0/FSRC), 供排障; 0 = 无故障。 */
 uint32_t dma_last_ftc;
@@ -52,12 +48,14 @@ uint32_t dma_last_fsrc;
 static uint8_t dma_prog[DMA_PROG_BYTES] __attribute__((section(".no_cache_ram")));
 
 /* 微码发射器: p 指向下一个空闲字节。 */
-static uint8_t* emit_op(uint8_t* p, uint8_t op) {
+static uint8_t *emit_op(uint8_t *p, uint8_t op)
+{
     *p++ = op;
     return p;
 }
 
-static uint8_t* emit_mov(uint8_t* p, uint8_t rd, uint32_t imm) {
+static uint8_t *emit_mov(uint8_t *p, uint8_t rd, uint32_t imm)
+{
     *p++ = DMA_OP_MOV;
     *p++ = rd;
     *p++ = (uint8_t)(imm >> 0);
@@ -73,15 +71,16 @@ static uint8_t* emit_mov(uint8_t* p, uint8_t rd, uint32_t imm) {
  * @note   时钟 APER_CLK_CTRL[0] 复位即开, 仍显式再开一次。全程只用
  *         非安全 APB 口 (DMAC_NS, 0xF8004000) 下发 debug 指令。
  */
-int dma_init(void) {
+int dma_init(void)
+{
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
     SLCR->APER_CLK_CTRL |= (1u << 0); /* DMA_CPU_2XCLKACT */
     SLCR->DMAC_RST_CTRL = 1u;
     SLCR->DMAC_RST_CTRL = 0u;
     SLCR->LOCK = SLCR_LOCK_KEY;
 
-    DMAC->WD = 0u;                  /* 看门狗关 (默认也是关) */
-    DMAC->INTCLR = 0xFFFFFFFFu;     /* 清全部残留事件 */
+    DMAC->WD = 0u;              /* 看门狗关 (默认也是关) */
+    DMAC->INTCLR = 0xFFFFFFFFu; /* 清全部残留事件 */
     return 0;
 }
 
@@ -94,20 +93,21 @@ int dma_init(void) {
  * @note   缓冲若在可缓存区, 调用方负责 DMA 前后的一致性维护; 微码
  *         本身在非缓存 OCM。完成信号 = 事件 0 (ES bit0), INTCLR 收尾。
  */
-int dma_memcpy(void* dst, const void* src, uint32_t byte_count) {
-    uint8_t* p = dma_prog;
+int dma_memcpy(void *dst, const void *src, uint32_t byte_count)
+{
+    uint8_t *p = dma_prog;
     uint32_t block_count;
     uint32_t tail_beats;
     uint32_t i;
     volatile uint32_t count;
 
-    if (byte_count == 0u) {
+    if (byte_count == 0u)
+    {
         return 0;
     }
-    if ((byte_count > DMA_MEMCPY_MAX_BYTES) ||
-        ((byte_count & 3u) != 0u) ||
-        (((uint32_t)(uintptr_t)dst & 3u) != 0u) ||
-        (((uint32_t)(uintptr_t)src & 3u) != 0u)) {
+    if ((byte_count > DMA_MEMCPY_MAX_BYTES) || ((byte_count & 3u) != 0u) || (((uint32_t)(uintptr_t)dst & 3u) != 0u) ||
+        (((uint32_t)(uintptr_t)src & 3u) != 0u))
+    {
         return -1;
     }
 
@@ -120,11 +120,13 @@ int dma_memcpy(void* dst, const void* src, uint32_t byte_count) {
     p = emit_mov(p, DMA_MOV_DAR, (uint32_t)(uintptr_t)dst);
     p = emit_mov(p, DMA_MOV_CCR, DMA_CCR(16));
 
-    for (i = 0; i < block_count; i++) {
+    for (i = 0; i < block_count; i++)
+    {
         p = emit_op(p, DMA_OP_LD);
         p = emit_op(p, DMA_OP_ST);
     }
-    if (tail_beats != 0u) {
+    if (tail_beats != 0u)
+    {
         p = emit_mov(p, DMA_MOV_CCR, DMA_CCR(tail_beats));
         p = emit_op(p, DMA_OP_LD);
         p = emit_op(p, DMA_OP_ST);
@@ -137,8 +139,10 @@ int dma_memcpy(void* dst, const void* src, uint32_t byte_count) {
     /* 经 debug 接口让 DMA manager 执行 DMAGO: 等 debug 空闲 ->
      * DBGINST0/1 装 "DMAGO 通道0, 微码地址" -> DBGCMD 触发。 */
     count = 0;
-    while ((DMAC->DBGSTATUS & 1u) != 0u) {
-        if (++count > 100000u) {
+    while ((DMAC->DBGSTATUS & 1u) != 0u)
+    {
+        if (++count > 100000u)
+        {
             return -1; /* debug 忙: 前一笔没收敛 */
         }
     }
@@ -151,8 +155,10 @@ int dma_memcpy(void* dst, const void* src, uint32_t byte_count) {
 
     /* 轮询事件 0 (ES bit0), 完成后清掉。 */
     count = 0;
-    while ((DMAC->ES & 1u) == 0u) {
-        if (++count > DMA_EVENT_POLL_LIMIT) {
+    while ((DMAC->ES & 1u) == 0u)
+    {
+        if (++count > DMA_EVENT_POLL_LIMIT)
+        {
             dma_last_ftc = DMAC->FTC0;
             dma_last_fsrc = DMAC->FSRC;
             return -1; /* 超时: 微码 fault 或地址不可达 */
