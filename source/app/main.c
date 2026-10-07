@@ -1,32 +1,38 @@
 /**
  * @file main.c
- * @brief Application entry: board bring-up, then a CDC ACM loopback
- *        (host -> CDC OUT ep -> CDC IN ep -> host) over CherryUSB, driven by
- *        the Zynq-7000 USB0 controller (ChipIdea usb2 2.20a) with the
- *        external USB3300 ULPI PHY on MIO 28..39 (USB3300 reset on MIO 47, active high per datasheet).
+ * @brief Application entry: board bring-up, then a CDC ACM bidirectional
+ *        throughput benchmark over CherryUSB, driven by the Zynq-7000 USB0
+ *        controller (ChipIdea usb2 2.20a) with the external USB3300 ULPI PHY
+ *        on MIO 28..39 (USB3300 reset on MIO 47, active high per datasheet).
+ *        The OUT endpoint is a sink (received bytes are counted, then
+ * dropped); the IN endpoint is a source (a fixed pattern is streamed out under
+ * DTR control). This is NOT a true loopback -- see cdc_throughput_init().
  */
 
 #include <stdio.h>
 
 #include "board.h"
+#include "qspi_probe.h"
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
-#include "zynq_dma.h"
 #include "zynq_soc.h"
+#include "zynq_uart.h"
 #include "zynq_usb.h"
 
 /* newlib console binding: syscalls.c's _write/_read loop over these. */
-int __io_putchar(int ch) {
-    uart_putc(UART0, ch);
+int __io_putchar(int ch)
+{
+    uart_putc(BOARD_UART, ch);
     return ch;
 }
 
-int __io_getchar(void) {
-    return uart_getc(UART0);
+int __io_getchar(void)
+{
+    return uart_getc(BOARD_UART);
 }
 
 /* ------------------------------------------------------------------ */
-/* CDC ACM loopback                                                    */
+/* CDC ACM throughput benchmark                                        */
 /* ------------------------------------------------------------------ */
 
 #define CDC_IN_EP  0x81
@@ -53,52 +59,47 @@ static const uint8_t cdc_device_desc[] = {
     USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0xEF, 0x02, 0x01, USBD_VID, USBD_PID, 0x0100, 0x01)};
 
 static const uint8_t cdc_device_qualifier[] = {
-    0x0a,
-    USB_DESCRIPTOR_TYPE_DEVICE_QUALIFIER,
-    0x00,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
-    0x40,
-    0x00,
-    0x00,
+    0x0a, USB_DESCRIPTOR_TYPE_DEVICE_QUALIFIER, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00,
 };
 
-static const char* cdc_strings[] = {
+static const char *cdc_strings[] = {
     (const char[]){0x09, 0x04}, /* LangID */
     "BareZynq7000",             /* Manufacturer */
     "CDC loopback",             /* Product */
     "000000000001",             /* Serial */
 };
 
-static const uint8_t* device_descriptor_callback(uint8_t speed) {
+static const uint8_t *device_descriptor_callback(uint8_t speed)
+{
     (void)speed;
     return cdc_device_desc;
 }
 
-static const uint8_t* config_descriptor_callback(uint8_t speed) {
+static const uint8_t *config_descriptor_callback(uint8_t speed)
+{
     return (speed == USB_SPEED_HIGH) ? cdc_config_desc_hs : cdc_config_desc_fs;
 }
 
-static const uint8_t* device_qualifier_callback(uint8_t speed) {
+static const uint8_t *device_qualifier_callback(uint8_t speed)
+{
     (void)speed;
     return cdc_device_qualifier;
 }
 
-static const char* string_descriptor_callback(uint8_t speed, uint8_t index) {
+static const char *string_descriptor_callback(uint8_t speed, uint8_t index)
+{
     (void)speed;
-    if (index >= (sizeof(cdc_strings) / sizeof(char*))) {
+    if (index >= (sizeof(cdc_strings) / sizeof(char *)))
+    {
         return NULL;
     }
     return cdc_strings[index];
 }
 
-static const struct usb_descriptor cdc_descriptor = {
-    .device_descriptor_callback = device_descriptor_callback,
-    .config_descriptor_callback = config_descriptor_callback,
-    .device_quality_descriptor_callback = device_qualifier_callback,
-    .string_descriptor_callback = string_descriptor_callback};
+static const struct usb_descriptor cdc_descriptor = {.device_descriptor_callback = device_descriptor_callback,
+                                                     .config_descriptor_callback = config_descriptor_callback,
+                                                     .device_quality_descriptor_callback = device_qualifier_callback,
+                                                     .string_descriptor_callback = string_descriptor_callback};
 
 /* 测速缓冲: 放 WB 缓存的低 OCM (.bss, 32 对齐), 一致性由 usb_dcache_* 钩子
  * (L1+PL310 双层维护, 见 zynq_usb.c) 负责。(read=下行收, write=上行发) */
@@ -113,31 +114,34 @@ static volatile bool cdc_dtr;      /* SET_CONTROL_LINE_STATE 的 DTR 位 */
 static volatile bool cdc_tx_busy;  /* IN 端点有一笔写未完成 */
 static volatile uint8_t cdc_speed; /* USB_SPEED_* */
 
-static void usbd_event_handler(uint8_t busid, uint8_t event) {
+static void usbd_event_handler(uint8_t busid, uint8_t event)
+{
     (void)busid;
 
-    switch (event) {
-        case USBD_EVENT_CONFIGURED:
-            cdc_configured = true;
-            cdc_speed = usbd_get_port_speed(busid);
-            /* 挂上第一个 OUT 读, 之后收完即丢再挂 (下行排水) */
-            usbd_ep_start_read(busid, CDC_OUT_EP, cdc_read_buf, sizeof(cdc_read_buf));
-            break;
-        case USBD_EVENT_RESET:
-            cdc_configured = false;
-            cdc_tx_busy = false; /* 在途写随总线复位作废 */
-            break;
-        case USBD_EVENT_DISCONNECTED:
-            cdc_configured = false;
-            cdc_tx_busy = false;
-            break;
-        default:
-            break;
+    switch (event)
+    {
+    case USBD_EVENT_CONFIGURED:
+        cdc_configured = true;
+        cdc_speed = usbd_get_port_speed(busid);
+        /* 挂上第一个 OUT 读, 之后收完即丢再挂 (下行排水) */
+        usbd_ep_start_read(busid, CDC_OUT_EP, cdc_read_buf, sizeof(cdc_read_buf));
+        break;
+    case USBD_EVENT_RESET:
+        cdc_configured = false;
+        cdc_tx_busy = false; /* 在途写随总线复位作废 */
+        break;
+    case USBD_EVENT_DISCONNECTED:
+        cdc_configured = false;
+        cdc_tx_busy = false;
+        break;
+    default:
+        break;
     }
 }
 
 /* OUT 完成: 只计数, 立刻挂下一笔读把主机侧管道 continuously 排空。 */
-static void cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes) {
+static void cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes)
+{
     (void)ep;
 
     cdc_rx_bytes += nbytes;
@@ -145,7 +149,8 @@ static void cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes) {
 }
 
 /* IN 写完成: 清 busy, 由主循环续写下一笔 (上行持续流)。 */
-static void cdc_bulk_in(uint8_t busid, uint8_t ep, uint32_t nbytes) {
+static void cdc_bulk_in(uint8_t busid, uint8_t ep, uint32_t nbytes)
+{
     (void)ep;
 
     cdc_tx_bytes += nbytes;
@@ -154,20 +159,17 @@ static void cdc_bulk_in(uint8_t busid, uint8_t ep, uint32_t nbytes) {
 
 /* tools/test_cdc_speed.py 的相位控制: DTR=0 下行测速 (只收丢), DTR=1 上行
  * 测速 (主循环持续压 IN 端点)。 */
-void usbd_cdc_acm_set_dtr(uint8_t busid, uint8_t intf, bool dtr) {
+void usbd_cdc_acm_set_dtr(uint8_t busid, uint8_t intf, bool dtr)
+{
     (void)busid;
     (void)intf;
 
     cdc_dtr = dtr;
 }
 
-static struct usbd_endpoint cdc_out_ep = {
-    .ep_addr = CDC_OUT_EP,
-    .ep_cb = cdc_bulk_out};
+static struct usbd_endpoint cdc_out_ep = {.ep_addr = CDC_OUT_EP, .ep_cb = cdc_bulk_out};
 
-static struct usbd_endpoint cdc_in_ep = {
-    .ep_addr = CDC_IN_EP,
-    .ep_cb = cdc_bulk_in};
+static struct usbd_endpoint cdc_in_ep = {.ep_addr = CDC_IN_EP, .ep_cb = cdc_bulk_in};
 
 static struct usbd_interface intf0;
 static struct usbd_interface intf1;
@@ -175,12 +177,14 @@ static struct usbd_interface intf1;
 static void usb_diag_print(void);
 
 /**
- * @brief  CDC ACM 回环初始化: 注册描述符/接口/端点后 usbd_initialize(),
- *         底层 (ULPI 引脚、PHY、时钟、GIC) 由其钩子 usb_dc_low_level_init()
- *         一并拉起。
+ * @brief  CDC ACM 双向吞吐测试初始化: 注册描述符/接口/端点后
+ * usbd_initialize(), 底层 (ULPI 引脚、PHY、时钟、GIC) 由其钩子
+ * usb_dc_low_level_init() 一并拉起。OUT 是 sink (只计数丢弃), IN 是 source
+ * (固定图案), 并非真回环。
  * @note   依赖 tick_init() 已跑 (PHY 复位延迟用 tick_mdelay)。
  */
-static void cdc_loopback_init(void) {
+static void cdc_throughput_init(void)
+{
     usbd_desc_register(0, &cdc_descriptor);
     usbd_add_interface(0, usbd_cdc_acm_init_intf(0, &intf0));
     usbd_add_interface(0, usbd_cdc_acm_init_intf(0, &intf1));
@@ -192,14 +196,17 @@ static void cdc_loopback_init(void) {
      * 冷掉电后晶振/ULPI 时钟爬坡有离散性, PHY 偶尔要再等几十 ms 才应答
      * 第一笔 viewport 读 —— 先重试几轮, 避免误报诊断 (实测枚举不受影响)。 */
     int link_ok = 0;
-    for (int i = 0; i < 5; i++) {
-        if (usb_phy_link_check() == 0) {
+    for (int i = 0; i < 5; i++)
+    {
+        if (usb_phy_link_check() == 0)
+        {
             link_ok = 1;
             break;
         }
         tick_mdelay(20);
     }
-    if (!link_ok) {
+    if (!link_ok)
+    {
         usb_diag_print();
     }
 }
@@ -208,15 +215,16 @@ static void cdc_loopback_init(void) {
  * @brief  打印 ULPI 寄存器行 (经 viewport 读 USB3300)。
  * @return 0 链路通; -1 超时 (无应答)。
  */
-static int usb_ulpi_line_print(void) {
+static int usb_ulpi_line_print(void)
+{
     uint8_t vh, vl, ph, pl, fctrl, otg;
 
-    if (usb_ulpi_read_reg(0x00, &vh) == 0 && usb_ulpi_read_reg(0x01, &vl) == 0 &&
-        usb_ulpi_read_reg(0x02, &ph) == 0 && usb_ulpi_read_reg(0x03, &pl) == 0 &&
-        usb_ulpi_read_reg(0x04, &fctrl) == 0 && usb_ulpi_read_reg(0x0A, &otg) == 0) {
-        printf("usb: ulpi vid=%02X%02X pid=%02X%02X func=%02X otgctl=%02X ss=%lu\n",
-               vh, vl, ph, pl, fctrl, otg,
-               (unsigned long)((USB0->ULPI_VIEWPORT >> 27) & 1u));
+    if (usb_ulpi_read_reg(0x00, &vh) == 0 && usb_ulpi_read_reg(0x01, &vl) == 0 && usb_ulpi_read_reg(0x02, &ph) == 0 &&
+        usb_ulpi_read_reg(0x03, &pl) == 0 && usb_ulpi_read_reg(0x04, &fctrl) == 0 && usb_ulpi_read_reg(0x0A, &otg) == 0)
+    {
+        printf("usb: ulpi vid=%02X%02X pid=%02X%02X func=%02X otgctl=%02X "
+               "ss=%lu\n",
+               vh, vl, ph, pl, fctrl, otg, (unsigned long)((USB0->ULPI_VIEWPORT >> 27) & 1u));
         return 0;
     }
     printf("usb: ulpi TIMEOUT - PHY 无应答\n");
@@ -235,24 +243,21 @@ static int usb_ulpi_line_print(void) {
  *         [7:2]=L3..L0 复用), clkctl 是 USB0_CLK_CTRL (SRCSEL[6:4]=100 选
  *         MIO ULPI 时钟输入)。链路死时给出方向性提示。
  */
-static void usb_diag_print(void) {
-    printf("usb: USBCMD=%08lX USBSTS=%08lX USBMODE=%08lX\n",
-           (unsigned long)USB0->USBCMD, (unsigned long)USB0->USBSTS,
+static void usb_diag_print(void)
+{
+    printf("usb: USBCMD=%08lX USBSTS=%08lX USBMODE=%08lX\n", (unsigned long)USB0->USBCMD, (unsigned long)USB0->USBSTS,
            (unsigned long)USB0->USBMODE);
-    printf("usb: PORTSC1=%08lX ccs=%lu susp=%lu pr=%lu phcd=%lu pspd=%lu\n",
-           (unsigned long)USB0->PORTSC1, (USB0->PORTSC1 >> 0) & 1u,
-           (USB0->PORTSC1 >> 7) & 1u, (USB0->PORTSC1 >> 8) & 1u,
-           (USB0->PORTSC1 >> 23) & 1u, (USB0->PORTSC1 >> 26) & 3u);
-    printf("usb: OTGSC=%08lX id=%lu avv=%lu asv=%lu bsv=%lu bse=%lu\n",
-           (unsigned long)USB0->OTGSC, USB0->OTGSC & 1u, (USB0->OTGSC >> 1) & 1u,
-           (USB0->OTGSC >> 2) & 1u, (USB0->OTGSC >> 3) & 1u,
-           (USB0->OTGSC >> 4) & 1u);
-    printf("usb: mio28=%08lX mio35=%08lX mio36=%08lX mio39=%08lX clkctl=%08lX\n",
-           (unsigned long)SLCR->MIO_PIN_28, (unsigned long)SLCR->MIO_PIN_35,
-           (unsigned long)SLCR->MIO_PIN_36, (unsigned long)SLCR->MIO_PIN_39,
+    printf("usb: PORTSC1=%08lX ccs=%lu susp=%lu pr=%lu phcd=%lu pspd=%lu\n", (unsigned long)USB0->PORTSC1,
+           (USB0->PORTSC1 >> 0) & 1u, (USB0->PORTSC1 >> 7) & 1u, (USB0->PORTSC1 >> 8) & 1u, (USB0->PORTSC1 >> 23) & 1u,
+           (USB0->PORTSC1 >> 26) & 3u);
+    printf("usb: OTGSC=%08lX id=%lu avv=%lu asv=%lu bsv=%lu bse=%lu\n", (unsigned long)USB0->OTGSC, USB0->OTGSC & 1u,
+           (USB0->OTGSC >> 1) & 1u, (USB0->OTGSC >> 2) & 1u, (USB0->OTGSC >> 3) & 1u, (USB0->OTGSC >> 4) & 1u);
+    printf("usb: mio28=%08lX mio35=%08lX mio36=%08lX mio39=%08lX clkctl=%08lX\n", (unsigned long)SLCR->MIO_PIN_28,
+           (unsigned long)SLCR->MIO_PIN_35, (unsigned long)SLCR->MIO_PIN_36, (unsigned long)SLCR->MIO_PIN_39,
            (unsigned long)SLCR->USB0_CLK_CTRL);
 
-    if (usb_ulpi_line_print() != 0) {
+    if (usb_ulpi_line_print() != 0)
+    {
         printf("usb: PHY 无应答 -> 供电/晶振/60MHz/布线\n");
     }
 }
@@ -260,147 +265,31 @@ static void usb_diag_print(void) {
 /**
  * @brief  周期性打印测速状态。
  */
-static void cdc_report(void) {
+static void cdc_report(void)
+{
     static uint32_t last_rx;
     static uint32_t last_tx;
     uint32_t rx = cdc_rx_bytes;
     uint32_t tx = cdc_tx_bytes;
 
-    printf("cdc: %s dtr=%u speed=%s rx=%lu (+%lu) tx=%lu (+%lu)\n",
-           cdc_configured ? "configured" : "idle   ", cdc_dtr ? 1u : 0u,
-           (cdc_speed == USB_SPEED_HIGH) ? "high" : "full",
-           (unsigned long)rx, (unsigned long)(rx - last_rx),
-           (unsigned long)tx, (unsigned long)(tx - last_tx));
+    printf("cdc: %s dtr=%u speed=%s rx=%lu (+%lu) tx=%lu (+%lu)\n", cdc_configured ? "configured" : "idle   ",
+           cdc_dtr ? 1u : 0u, (cdc_speed == USB_SPEED_HIGH) ? "high" : "full", (unsigned long)rx,
+           (unsigned long)(rx - last_rx), (unsigned long)tx, (unsigned long)(tx - last_tx));
     last_rx = rx;
     last_tx = tx;
-}
-
-/* ------------------------------------------------------------------ */
-/* DMAC (PL330) 自检: nocache 缓冲搬运校验, 结果存全局 (J-Link 可读)。 */
-/* ------------------------------------------------------------------ */
-
-#define DMA_TEST_STATUS_IDLE 0u
-#define DMA_TEST_STATUS_PASS 1u
-#define DMA_TEST_STATUS_FAIL 2u
-
-/* 自检结果放非缓存区: J-Link 经 DAP 读它时不会被 CPU L1 脏行挡住。 */
-/* 初值不写 = NOLOAD 段不支持; dma_selftest() 入口统一置 IDLE。 */
-static volatile uint32_t dma_test_status __attribute__((section(".no_cache_ram")));
-static volatile uint32_t dma_test_fail_step __attribute__((section(".no_cache_ram")));
-
-/**
- * @brief  dma_memcpy 分相自检 (排障用):
- *         A: 高 OCM 非缓存 -> 高 OCM 非缓存, 4 KiB (原始路径)
- *         B: 低 OCM 缓存区 -> 低 OCM 缓存区, 4 KiB (软件 cache 维护)
- *         C: 低 OCM 1044 B (16 块 + 20B 尾巴)
- *         失败相位记入 dma_test_fail_step (A/B/C + dma_last_ftc 现场码),
- *         USB 上行流字符编码结果 ('P' 全过, 'A'/'B'/'C' 首个失败相)。
- */
-extern uint32_t dma_last_ftc;
-extern uint32_t dma_last_fsrc;
-extern void usb_dcache_clean(uintptr_t addr, size_t size);
-extern void usb_dcache_invalidate(uintptr_t addr, size_t size);
-
-static __attribute__((section(".no_cache_ram"))) uint32_t dma_test_src[1024];
-static __attribute__((section(".no_cache_ram"))) uint32_t dma_test_dst[1024];
-static uint32_t dma_test_src_low[1024]; /* 低 OCM (WB 缓存) */
-static uint32_t dma_test_dst_low[1024];
-
-static volatile uint32_t dma_test_mask; /* bit0=A(bit高OCM) bit1=B(低OCM) bit2=C(尾) */
-
-static void dma_selftest(void) {
-    uint32_t i;
-    uint32_t mask = 0u;
-
-    dma_test_status = DMA_TEST_STATUS_IDLE;
-    dma_test_fail_step = 0u;
-
-    if (dma_init() != 0) {
-        dma_test_fail_step = 0xE0u;
-        dma_test_mask = 0x8u;
-        dma_test_status = DMA_TEST_STATUS_FAIL;
-        return;
-    }
-
-    for (i = 0; i < 1024u; i++) {
-        dma_test_src[i] = 0xA5A50000u + i;
-        dma_test_dst[i] = 0u;
-    }
-    if (dma_memcpy(dma_test_dst, dma_test_src, 4096u) != 0) {
-        mask |= 1u;
-        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xA00u + (dma_last_ftc >> 16);
-    } else {
-        for (i = 0; i < 1024u; i++) {
-            if (dma_test_dst[i] != (0xA5A50000u + i)) {
-                mask |= 1u;
-                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xA10u + i;
-                break;
-            }
-        }
-    }
-
-    for (i = 0; i < 1024u; i++) {
-        dma_test_src_low[i] = 0x3C3C0000u + i;
-        dma_test_dst_low[i] = 0u;
-    }
-    usb_dcache_clean((uintptr_t)dma_test_src_low, sizeof(dma_test_src_low));
-    usb_dcache_invalidate((uintptr_t)dma_test_dst_low, sizeof(dma_test_dst_low));
-    if (dma_memcpy(dma_test_dst_low, dma_test_src_low, 4096u) != 0) {
-        mask |= 2u;
-        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xB00u + (dma_last_ftc >> 16);
-    } else {
-        usb_dcache_invalidate((uintptr_t)dma_test_dst_low, sizeof(dma_test_dst_low));
-        for (i = 0; i < 1024u; i++) {
-            if (dma_test_dst_low[i] != (0x3C3C0000u + i)) {
-                mask |= 2u;
-                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xB10u + i;
-                break;
-            }
-        }
-    }
-
-    for (i = 0; i < 1024u; i++) {
-        dma_test_src_low[i] = 0x5A5A0000u + i;
-        dma_test_dst_low[i] = 0u;
-    }
-    usb_dcache_clean((uintptr_t)dma_test_src_low, 1044u);
-    usb_dcache_invalidate((uintptr_t)dma_test_dst_low, 1044u);
-    if (dma_memcpy(dma_test_dst_low, dma_test_src_low, 1044u) != 0) {
-        mask |= 4u;
-        if (dma_test_fail_step == 0u) dma_test_fail_step = 0xC00u + (dma_last_ftc >> 16);
-    } else {
-        usb_dcache_invalidate((uintptr_t)dma_test_dst_low, 1044u);
-        for (i = 0; i < (1044u / 4u); i++) {
-            if (dma_test_dst_low[i] != (0x5A5A0000u + i)) {
-                mask |= 4u;
-                if (dma_test_fail_step == 0u) dma_test_fail_step = 0xC10u + i;
-                break;
-            }
-        }
-    }
-
-    dma_test_mask = mask;
-    dma_test_status = (mask == 0u) ? DMA_TEST_STATUS_PASS : DMA_TEST_STATUS_FAIL;
 }
 
 /**
  * @brief  Application entry point.
  * @return Does not return.
  */
-int main(void) {
+int main(void)
+{
     uint32_t t_led = 0u;
     uint32_t t_last = 0u;
 
-    mio_set_function(LED_MIO, MIO24_GPIO);
-    mio_set_function(11, MIO11_UART0);
-    mio_set_function(10, MIO10_UART0);
-    mio_enable_pull_up(11);
-    mio_enable_pull_up(10);
-
-    mio_enable_clock();
-    mio_direction_output(LED_MIO, 0);
-
-    uart_init(UART0, 115200);
+    board_console_init();
+    board_led_init();
 
     /* PL 配置放在控制台之后：加载/失败全程可见。board 路径本无 console
        依赖（反之 console 也不依赖 PL），两向都可换序；tick 已在跑，
@@ -408,34 +297,77 @@ int main(void) {
     printf("pl: loading...\n");
     board_init();
 
-    dma_selftest();
-    printf("dma: selftest %s\n",
-           dma_test_status == DMA_TEST_STATUS_PASS ? "pass" : "FAIL");
-    if (dma_test_status == DMA_TEST_STATUS_FAIL) {
-        printf("dma: fail_step=%lu\n", (unsigned long)dma_test_fail_step);
-    }
-
     printf("pl_status=%u\n", (unsigned)board_pl_status());
+
+    /* QSPI 端口诊断已收官 (2026-10-07): 出货配置 25MHz 直接采样经
+     * go-live 实证, 预热已删。诊断命令保留按键触发 ('q'/'b'/'c'/'r'/
+     * 'n'/'m'/'k'/'e')。 */
     memset(cdc_write_buf, 'U', sizeof(cdc_write_buf)); /* 上行图案, 内容无关 */
-    cdc_loopback_init();
+    cdc_throughput_init();
+
+    printf("probe: 'q'=单拍 'b'=突发 'c'=快照 'r'=BootROM复刻 'n'=直接采样 (窗口屏蔽IRQ, "
+           "USB断流)\n");
 
     /* 纯轮询: 续写检查每圈都跑 (上行测速要压满管道), LED/报告按 tick 分频。
      * 主循环不睡眠。 */
-    for (;;) {
+    for (;;)
+    {
+        /* QSPI 端口诊断: 测速期间勿触发 (CDC 管道会被扫描窗口掐断)。
+         * go-live 后系统留在合法配置上, 其余命令恢复 golden 会挂死, 锁死。 */
+        if (!probe_keys_frozen())
+        {
+            int cmd = uart_try_getc(BOARD_UART);
+            if (cmd == 'q')
+            {
+                probe_sweep();
+            }
+            else if (cmd == 'b')
+            {
+                probe_burst();
+            }
+            else if (cmd == 'c')
+            {
+                probe_boot_cfg();
+            }
+            else if (cmd == 'r')
+            {
+                probe_bootrom();
+            }
+            else if (cmd == 'n')
+            {
+                probe_direct();
+            }
+            else if (cmd == 'm')
+            {
+                probe_mismatch();
+            }
+            else if (cmd == 'k')
+            {
+                probe_blocks();
+            }
+            else if (cmd == 'e')
+            {
+                probe_golive();
+            }
+        }
+
         /* 上行测速相 (DTR=1): 写一笔 2048, 完成即续, 始终压满 IN 管道。 */
-        if (cdc_configured && cdc_dtr && !cdc_tx_busy) {
-            if (usbd_ep_start_write(0, CDC_IN_EP, cdc_write_buf,
-                                    sizeof(cdc_write_buf)) == 0) {
+        if (cdc_configured && cdc_dtr && !cdc_tx_busy)
+        {
+            if (usbd_ep_start_write(0, CDC_IN_EP, cdc_write_buf, sizeof(cdc_write_buf)) == 0)
+            {
                 cdc_tx_busy = true;
             }
         }
 
-        if ((tick_get() - t_led) >= 500u) {
+        if ((tick_get() - t_led) >= 500u)
+        {
             t_led = tick_get();
-            mio_toggle(LED_MIO);
+            board_led_toggle();
         }
 
-        if ((tick_get() - t_last) >= 1000u) {
+        if ((tick_get() - t_last) >= 1000u)
+        {
             t_last = tick_get();
             cdc_report();
         }

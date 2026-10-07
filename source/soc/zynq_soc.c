@@ -10,27 +10,27 @@
 #include "zynq_irq.h"
 #include "zynq_tick.h"
 
-#define MMU_TABLE_ENTRIES (0x1000U)  // 4096 x 1 MB sections cover the full 4 GB
+#define MMU_TABLE_ENTRIES (0x1000U) // 4096 x 1 MB sections cover the full 4 GB
 
 /* Page table in non-cacheable high OCM (0xFFFF0000): the CA9 walker is
    not D-cache coherent. */
 static uint32_t mmu_table[MMU_TABLE_ENTRIES] __attribute__((aligned(16384), section(".mmu_table")));
 
-#define TT_SECTION          (0x2U)                                // bits[1:0] == 10: 1 MB section
-#define TT_DOMAIN_0         (0x0U << 5)                           // domain 0
-#define TT_XN               (1U << 4)                             // execute never
-#define TT_AP_RW            (0x2U << 10)                          // AP[2:0] == 010: RW (PL1 and PL0)
-#define TT_AP_RO            ((0x2U << 10) | (1U << 15))           // AP[2:0] == 110: RO (PL1 and PL0)
-#define TT_STRONGLY_ORDERED (0U)                                  // TEX=000, C=0, B=0
-#define TT_WRITE_BACK_ALLOC ((1U << 12) | (1U << 3) | (1U << 2))  // TEX=001, C=1, B=1: normal, write-back, write-allocate
-#define TT_NON_CACHEABLE    (1U << 12)                            // TEX=001, C=0, B=0: normal, non-cacheable
+#define TT_SECTION          (0x2U)                      // bits[1:0] == 10: 1 MB section
+#define TT_DOMAIN_0         (0x0U << 5)                 // domain 0
+#define TT_XN               (1U << 4)                   // execute never
+#define TT_AP_RW            (0x2U << 10)                // AP[2:0] == 010: RW (PL1 and PL0)
+#define TT_AP_RO            ((0x2U << 10) | (1U << 15)) // AP[2:0] == 110: RO (PL1 and PL0)
+#define TT_STRONGLY_ORDERED (0U)                        // TEX=000, C=0, B=0
+#define TT_WRITE_BACK_ALLOC                                                                                            \
+    ((1U << 12) | (1U << 3) | (1U << 2)) // TEX=001, C=1, B=1: normal, write-back, write-allocate
+#define TT_NON_CACHEABLE (1U << 12)      // TEX=001, C=0, B=0: normal, non-cacheable
 
 #define TT_ENTRY(phys_mb, attr) ((((uint32_t)(phys_mb)) << 20) | (attr) | TT_DOMAIN_0 | TT_SECTION)
 
 /* Must run from OCM during the QSPI/clock reconfiguration window. */
 static void qspi_reconfig(void) __attribute__((section(".fast"), noinline));
 static void sys_clock_init(void) __attribute__((section(".fast"), noinline));
-static void xip_warm_cache(void) __attribute__((section(".fast"), noinline));
 
 /* PLL lock wait: the loop runs from .fast in OCM, ~10 us at 667 MHz. */
 #define PLL_LOCK_POLL_LIMIT (100000U)
@@ -46,6 +46,7 @@ static void xip_warm_cache(void) __attribute__((section(".fast"), noinline));
  *   0xFA000000-0xFAFFFFFF  unmapped
  *   0xFB000000-0xFB0FFFFF  CPU-only OCM alias          SO RW
  *   0xFB100000-0xFB1FFFFF  CPU-only OCM alias          non-cache RW
+ *   0xFB200000-0xFB2FFFFF  flash probe alias           non-cache RO -> PA 0xFC000000
  *   0xFC000000-0xFCFFFFFF  16 MB QSPI flash            WB-alloc RO (XIP)
  *   0xFD000000-0xFFEFFFFF  unmapped
  *   0xFFFF0000-0xFFFFFFFF  high OCM (OCM3)             non-cache RW (MMU tbl)
@@ -53,11 +54,13 @@ static void xip_warm_cache(void) __attribute__((section(".fast"), noinline));
  * 0xFB0/0xFB1 alias PA 0x0; DMA must use high OCM (other bus masters
  * skip the MMU and see DDR). L2 comes up in mmu_and_caches_enable().
  */
-static void mmu_init(uint32_t* table) {
+static void mmu_init(uint32_t *table)
+{
     uint32_t i;
 
     // unmapped: any access triggers a translation fault
-    for (i = 0; i < MMU_TABLE_ENTRIES; i++) {
+    for (i = 0; i < MMU_TABLE_ENTRIES; i++)
+    {
         table[i] = 0;
     }
 
@@ -65,7 +68,8 @@ static void mmu_init(uint32_t* table) {
     table[0x000] = TT_ENTRY(0x000, TT_WRITE_BACK_ALLOC | TT_AP_RW);
 
     // PL + IOP peripherals + PS system registers. DDR (0x001-0x3FF) left unmapped.
-    for (i = 0x400; i < 0xFA0u; i++) {
+    for (i = 0x400; i < 0xFA0u; i++)
+    {
         table[i] = TT_ENTRY(i, TT_STRONGLY_ORDERED | TT_AP_RW | TT_XN);
     }
 
@@ -73,8 +77,14 @@ static void mmu_init(uint32_t* table) {
     table[0xFB0] = TT_ENTRY(0x000, TT_STRONGLY_ORDERED | TT_AP_RW);
     table[0xFB1] = TT_ENTRY(0x000, TT_NON_CACHEABLE | TT_AP_RW);
 
+    // qspi_probe's raw window onto the first 1 MB of flash: non-cacheable,
+    // so a bad sample from an unreliable port can never pollute L1D/L2 and
+    // every read truly reaches the QSPI bus. Covers the whole ~156 KB image.
+    table[0xFB2] = TT_ENTRY(0xFC0, TT_NON_CACHEABLE | TT_AP_RO);
+
     // 16 MB QSPI flash, XIP read caching
-    for (i = 0xFC0; i < 0xFD0u; i++) {
+    for (i = 0xFC0; i < 0xFD0u; i++)
+    {
         table[i] = TT_ENTRY(i, TT_WRITE_BACK_ALLOC | TT_AP_RO);
     }
 
@@ -83,35 +93,21 @@ static void mmu_init(uint32_t* table) {
 }
 
 /**
- * @brief  Pull the whole flash-resident image into L2/L1D while the QSPI
- *         still runs its BootROM configuration: reads through the freshly
- *         reconfigured controller are not reliable on this board, so the
- *         warmed L2 serves all early fetches.
- *
- * @note Span = _sidata + .data size (end of everything fetchable from
- *       QSPI); extend it if another AT > FLASH section appears. Runs
- *       from OCM (.fast) during the reconfiguration window.
- */
-static void xip_warm_cache(void) {
-    extern uint8_t _sidata[], _sdata[], _edata[];
-    volatile const uint32_t* flash = (volatile const uint32_t*)LQSPI_BASE;
-    uint32_t word_count = ((uint32_t)(uintptr_t)(_sidata + (_edata - _sdata)) - LQSPI_BASE + 3U) / 4U;
-    uint32_t i;
-
-    for (i = 0U; i < word_count; i++) {
-        (void)flash[i];
-    }
-}
-
-/**
  * @brief  Reconfigure the QSPI clock and read capture for XIP: ref =
- *         IO PLL/5 = 200 MHz, SCLK = 100 MHz, loopback capture.
+ *         IO PLL/5 = 200 MHz (> CPU_1x = 111 MHz, ch.12 ratio rule),
+ *         SCLK = ref/8 = 25 MHz, direct pad sampling (LPBK_DLY_ADJ = 0).
  *
  * @note Leaves linear mode with both FIFOs empty (ch.12), or the
  *       autonomous prefetch corrupts in-flight data. Runs from OCM
  *       (.fast) - the CPU fetches from the flash being reconfigured.
+ *       Direct sampling is mandatory on this board: SCLK above
+ *       FQSPICLK2 (~40 MHz) would need the MIO8 feedback clock, which
+ *       is neither routed nor pinmuxed, and the internal loopback
+ *       sampling path is dead without it (measured 2026-10-07: reads
+ *       correct at every legal config; loopback configs return zeros).
  */
-static void qspi_reconfig(void) {
+static void qspi_reconfig(void)
+{
     uint32_t lqspi_cr;
     uint32_t i;
 
@@ -120,8 +116,10 @@ static void qspi_reconfig(void) {
     QSPI->LQSPI_CR = lqspi_cr & ~(1U << 31); /* LQ_MODE = 0 */
 
     /* 2. Drain RxFIFO (63 deep): stop once SR[4] = 0. */
-    for (i = 0U; i < 64U; i++) {
-        if ((QSPI->SR & (1U << 4)) == 0U) {
+    for (i = 0U; i < 64U; i++)
+    {
+        if ((QSPI->SR & (1U << 4)) == 0U)
+        {
             break;
         }
         (void)QSPI->RXD;
@@ -135,17 +133,19 @@ static void qspi_reconfig(void) {
     SLCR->LQSPI_RST_CTRL = (1U << 1) | /* QSPI_REF_RST                    */
                            (1U << 0);  /* LQSPI_CPU1X_RST                 */
     SLCR->LQSPI_RST_CTRL = 0U;
-    for (i = 0U; i < 100U; i++) {
+    for (i = 0U; i < 100U; i++)
+    {
         __asm volatile("nop");
     }
     SLCR->LOCK = SLCR_LOCK_KEY;
 
-    /* 4. Reprogram controller, re-enter linear mode (LQSPI_CR = 0x8000016B). */
-    QSPI->CR = 0x800238C1U;
-    /* UG585 App.A: bit5 USE_LPBK = 1 = internal loopback sampling clock
-       (active only with BAUD_RATE_DIV = 000 above); DLY[4:0] keep reset
-       value - MIO8 pad loopback is NOT used (pin left in its boot state). */
-    QSPI->LPBK_DLY_ADJ = 0x2DU;
+    /* 4. Reprogram controller, re-enter linear mode (LQSPI_CR = 0x8000016B).
+       CR = BootROM base 0x800238C1 with BAUD_RATE_DIV = 010 -> SCLK =
+       ref/8 = 25 MHz. LPBK_DLY_ADJ = 0: direct pad sampling - the MIO8
+       feedback path is not routed on this board, so loopback capture is
+       dead and must not be enabled. */
+    QSPI->CR = 0x800238D1U;
+    QSPI->LPBK_DLY_ADJ = 0U;
     QSPI->LQSPI_CR = lqspi_cr; /* LQ_MODE = 1                    */
     QSPI->ER = 1U;             /* SPI_EN = 1                     */
 }
@@ -159,7 +159,8 @@ static void qspi_reconfig(void) {
  *
  * @note Runs from OCM (.fast) during the reconfiguration window.
  */
-static void sys_clock_init(void) {
+static void sys_clock_init(void)
+{
     uint32_t ctrl;
     uint32_t retry;
 
@@ -170,20 +171,21 @@ static void sys_clock_init(void) {
     ctrl = (ctrl & ~(0x7FU << 12)) | (40UL << 12);
     SLCR->ARM_PLL_CTRL = ctrl;
 
-    SLCR->ARM_PLL_CFG = ((uint32_t)250UL << 12) |
-                        ((uint32_t)2UL << 8) |
-                        ((uint32_t)2UL << 4);
+    SLCR->ARM_PLL_CFG = ((uint32_t)250UL << 12) | ((uint32_t)2UL << 8) | ((uint32_t)2UL << 4);
 
     SLCR->ARM_PLL_CTRL = ctrl | (1U << 4);             /* force bypass     */
     SLCR->ARM_PLL_CTRL = ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
     SLCR->ARM_PLL_CTRL = ctrl | (1U << 4);             /* de-assert reset  */
 
-    for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++) {
-        if ((SLCR->PLL_STATUS & 1U) != 0U) { /* ARM_PLL_LOCK */
+    for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
+    {
+        if ((SLCR->PLL_STATUS & 1U) != 0U)
+        { /* ARM_PLL_LOCK */
             break;
         }
     }
-    if (retry == PLL_LOCK_POLL_LIMIT) {
+    if (retry == PLL_LOCK_POLL_LIMIT)
+    {
         /* ARM PLL failed to lock: keep bypass clocks, return. */
         SLCR->LOCK = SLCR_LOCK_KEY;
         return;
@@ -207,12 +209,15 @@ static void sys_clock_init(void) {
     SLCR->IO_PLL_CTRL = ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
     SLCR->IO_PLL_CTRL = ctrl | (1U << 4);             /* de-assert reset  */
 
-    for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++) {
-        if ((SLCR->PLL_STATUS & (1U << 2)) != 0U) { /* IO_PLL_LOCK */
+    for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
+    {
+        if ((SLCR->PLL_STATUS & (1U << 2)) != 0U)
+        { /* IO_PLL_LOCK */
             break;
         }
     }
-    if (retry == PLL_LOCK_POLL_LIMIT) {
+    if (retry == PLL_LOCK_POLL_LIMIT)
+    {
         /* IO PLL failed to lock: keep bypassed, leave QSPI on ARM PLL. */
         SLCR->LOCK = SLCR_LOCK_KEY;
         return;
@@ -224,8 +229,8 @@ static void sys_clock_init(void) {
 }
 
 /* TAG/DATA RAM latency regs (0x108/0x10C) are not in the CMSIS struct. */
-#define L2C_TAG_RAM_CNTRL  ((*((__IO uint32_t*)(uintptr_t)L2C_310_BASE + (0x108U / 4U))))
-#define L2C_DATA_RAM_CNTRL ((*((__IO uint32_t*)(uintptr_t)L2C_310_BASE + (0x10CU / 4U))))
+#define L2C_TAG_RAM_CNTRL  ((*((__IO uint32_t *)(uintptr_t)L2C_310_BASE + (0x108U / 4U))))
+#define L2C_DATA_RAM_CNTRL ((*((__IO uint32_t *)(uintptr_t)L2C_310_BASE + (0x10CU / 4U))))
 
 /**
  * @brief  Bring up the PL310: official boot.S sequence - configure while
@@ -234,7 +239,8 @@ static void sys_clock_init(void) {
  *         prefetcher kills the flash during QSPI reconfig (verified on
  *         this board); demand linefills make 100 MHz XIP reliable.
  */
-static void l2_cache_enable(void) {
+static void l2_cache_enable(void)
+{
     L2C_310->AUX_CNT &= ~((1UL << 29) | (1UL << 28)); /* prefetch off (board) */
     L2C_TAG_RAM_CNTRL = 0x111UL;                      /* official boot.S value */
     L2C_DATA_RAM_CNTRL = 0x121UL;                     /* official boot.S value */
@@ -257,7 +263,8 @@ static void l2_cache_enable(void) {
  *         reset_handler while still disabled.
  * @param  table Base of the table filled by mmu_init(); 16 KB aligned.
  */
-static void mmu_and_caches_enable(uint32_t* table) {
+static void mmu_and_caches_enable(uint32_t *table)
+{
     uint32_t sctlr;
 
     // TTBR0 = table; DACR all-client; ACTLR SMP + maintenance broadcast.
@@ -279,10 +286,10 @@ static void mmu_and_caches_enable(uint32_t* table) {
     __set_ACTLR(__get_ACTLR() | (1UL << 2));
 
     sctlr = __get_SCTLR();
-    sctlr |= SCTLR_M_Msk     // M: enable MMU
-             | SCTLR_C_Msk   // C: enable D cache
-             | SCTLR_Z_Msk   // Z: enable branch prediction
-             | SCTLR_I_Msk;  // I: enable I cache
+    sctlr |= SCTLR_M_Msk    // M: enable MMU
+             | SCTLR_C_Msk  // C: enable D cache
+             | SCTLR_Z_Msk  // Z: enable branch prediction
+             | SCTLR_I_Msk; // I: enable I cache
     __set_SCTLR(sctlr);
     __ISB();
 }
@@ -293,10 +300,25 @@ static void mmu_and_caches_enable(uint32_t* table) {
  *         reconfigure PLLs and QSPI from OCM. Any other order hangs the
  *         bus.
  */
-void soc_init(void) {
+static soc_qspi_boot_cfg qspi_boot_cfg;
+
+const soc_qspi_boot_cfg *soc_qspi_boot_cfg_get(void)
+{
+    return &qspi_boot_cfg;
+}
+
+void soc_init(void)
+{
+    /* Capture the BootROM-era QSPI state first: nothing up to this point
+       has touched the controller (qspi_probe compares against it). */
+    qspi_boot_cfg.lqspi_clk_ctrl = SLCR->LQSPI_CLK_CTRL;
+    qspi_boot_cfg.cr = QSPI->CR;
+    qspi_boot_cfg.lqspi_cr = QSPI->LQSPI_CR;
+    qspi_boot_cfg.lpbk_dly_adj = QSPI->LPBK_DLY_ADJ;
+    qspi_boot_cfg.er = QSPI->ER;
+
     mmu_init(mmu_table);
     mmu_and_caches_enable(mmu_table);
-    xip_warm_cache();
 
     sys_clock_init();
     qspi_reconfig();

@@ -43,7 +43,8 @@
 #define MPCORE_BASE  (0xF8F00000UL)
 #define XADC_BASE    (0XF8007100UL)
 
-typedef struct {                           /* System Level Control Registers (SLCR) */
+typedef struct
+{                                          /* System Level Control Registers (SLCR) */
     __IO uint32_t SCL;                     /* 0x000  */
     __O uint32_t LOCK;                     /* 0x004 SLCR lock register */
     __O uint32_t UNLOCK;                   /* 0x008 SLCR unlock register */
@@ -231,7 +232,8 @@ typedef struct {                           /* System Level Control Registers (SL
     __IO uint32_t DDRIOB_DCI_STATUS;       /* 0xB74 DDR IO Buffer DCI Status (mixed access) */
 } SLCR_Type;
 
-typedef struct {                              /* DDR Memory Controller (DDRC) */
+typedef struct
+{                                             /* DDR Memory Controller (DDRC) */
     __IO uint32_t DDRC_CTRL;                  /* 0x000 DDRC Control */
     __IO uint32_t TWO_RANK_CFG;               /* 0x004 Two Rank Configuration */
     __IO uint32_t HPR;                        /* 0x008 HPR Queue control */
@@ -358,7 +360,8 @@ typedef struct {                              /* DDR Memory Controller (DDRC) */
     __IO uint32_t LPDDR_CTRL3;                /* 0x2B4 LPDDR2 Control 3 */
 } DDRC_Type;
 
-typedef struct {                   /* Device Configuration Interface (DevCfg) */
+typedef struct
+{                                  /* Device Configuration Interface (DevCfg) */
     __IO uint32_t CTRL;            /* 0x000 Control Register (mixed access) */
     __IO uint32_t LOCK;            /* 0x004 Lock Register (mixed access) */
     __IO uint32_t CFG;             /* 0x008 Configuration Register */
@@ -385,7 +388,8 @@ typedef struct {                   /* Device Configuration Interface (DevCfg) */
     __IO uint32_t XADCIF_MCTL;     /* 0x118  */
 } DEVCFG_Type;
 
-typedef struct {               /* DMA Controller (PL330 DMAC) */
+typedef struct
+{                              /* DMA Controller (PL330 DMAC) */
     __IO uint32_t DS;          /* 0x000 DMA Status Register (mixed access) */
     __IO uint32_t DPC;         /* 0x004 DMA Program Counter Rregister (mixed access) */
     uint32_t RESERVED0[6];     /* Reserved, 0x008-0x01F */
@@ -495,7 +499,8 @@ typedef struct {               /* DMA Controller (PL330 DMAC) */
     __IO uint32_t PCELL_ID_3;  /* 0xFFC  (mixed access) */
 } DMAC_Type;
 
-typedef struct {                        /* Gigabit Ethernet Controller (GEM) */
+typedef struct
+{                                       /* Gigabit Ethernet Controller (GEM) */
     __IO uint32_t NWCTRL;               /* 0x000 Network Control reg (mixed access) */
     __IO uint32_t NWCFG;                /* 0x004 Network Config reg */
     __I uint32_t NWSR;                  /* 0x008 Network Status reg */
@@ -602,7 +607,8 @@ typedef struct {                        /* Gigabit Ethernet Controller (GEM) */
     __I uint32_t DESIGN_CFG5;           /* 0x290  */
 } GEM_Type;
 
-typedef struct {                   /* General Purpose I/O (GPIO) */
+typedef struct
+{                                  /* General Purpose I/O (GPIO) */
     __IO uint32_t MASK_DATA_0_LSW; /* 0x000 Mask and Data Register LSW, WO (mixed access) */
     __IO uint32_t MASK_DATA_0_MSW; /* 0x004 Mask and Data Register MSW, WO (mixed access) */
     __IO uint32_t MASK_DATA_1_LSW; /* 0x008 Data/Mask Registers offset (mixed access) */
@@ -663,7 +669,8 @@ typedef struct {                   /* General Purpose I/O (GPIO) */
     __IO uint32_t INT_ANY_3;       /* 0x2E4  */
 } GPIO_Type;
 
-typedef struct {              /* I2C Controller */
+typedef struct
+{                             /* I2C Controller */
     __IO uint32_t CR;         /* 0x000 32-bit Control (mixed access) */
     __I uint32_t SR;          /* 0x004 Status */
     __IO uint32_t ADDR;       /* 0x008 IIC Address (mixed access) */
@@ -677,7 +684,8 @@ typedef struct {              /* I2C Controller */
     __IO uint32_t IDR;        /* 0x028 Interrupt Disable (mixed access) */
 } I2C_Type;
 
-typedef struct {                /* Quad-SPI Flash Controller */
+typedef struct
+{                               /* Quad-SPI Flash Controller */
     __IO uint32_t CR;           /* 0x000 QSPI configuration register (mixed access) */
     __IO uint32_t SR;           /* 0x004 QSPI interrupt status register (mixed access) */
     __IO uint32_t IER;          /* 0x008 Interrupt Enable register. (mixed access) */
@@ -704,25 +712,26 @@ typedef struct {                /* Quad-SPI Flash Controller */
     __IO uint32_t MOD_ID;       /* 0x0FC Module Identification register */
 } QSPI_Type;
 
-typedef struct {                               /* SD/SDIO Controller (ARASAN) */
-    __IO uint32_t ARGMT2_LO;                   /* 0x000 Argument2 Low Register */
-    __IO uint32_t BLK_SIZE;                    /* 0x004 Block Size Register (mixed access) */
-    __IO uint32_t ARGMT;                       /* 0x008 Argument Register */
-    __IO uint32_t XFER_MODE;                   /* 0x00C Transfer Mode Register (mixed access) */
-    __I uint32_t RESP0;                        /* 0x010 Response0 Register */
-    __IO uint32_t RESP1;                       /* 0x014 Response1 Register */
-    __IO uint32_t RESP2;                       /* 0x018 Response2 Register */
-    __IO uint32_t RESP3;                       /* 0x01C Response3 Register */
-    __IO uint32_t BUF_DAT_PORT;                /* 0x020 Buffer Data Port */
-    __I uint32_t PRES_STATE;                   /* 0x024 Present State */
-    __IO uint32_t HOST_CTRL1;                  /* 0x028 Host Control 1 */
-    __IO uint32_t CLK_CTRL;                    /* 0x02C Clock Control */
-    __IO uint32_t NORMAL_INTERRUPT_STAT;       /* 0x030  */
-    __IO uint32_t NORM_INTR_STAT_EN;           /* 0x034 Normal/Error Interrupt Status Enable (16-bit regs at 0x34/0x36) */
-    __IO uint32_t NORM_INTR_SIG_EN;            /* 0x038 Normal/Error Interrupt Signal Enable (16-bit regs at 0x38/0x3A) */
-    __I uint32_t AUTO_CMD12_ERROR_STATUS;      /* 0x03C  */
-    __I uint32_t CAPS;                         /* 0x040 Capabilities Register */
-    uint32_t RESERVED1;                        /* Reserved, 0x044 */
+typedef struct
+{                                         /* SD/SDIO Controller (ARASAN) */
+    __IO uint32_t ARGMT2_LO;              /* 0x000 Argument2 Low Register */
+    __IO uint32_t BLK_SIZE;               /* 0x004 Block Size Register (mixed access) */
+    __IO uint32_t ARGMT;                  /* 0x008 Argument Register */
+    __IO uint32_t XFER_MODE;              /* 0x00C Transfer Mode Register (mixed access) */
+    __I uint32_t RESP0;                   /* 0x010 Response0 Register */
+    __IO uint32_t RESP1;                  /* 0x014 Response1 Register */
+    __IO uint32_t RESP2;                  /* 0x018 Response2 Register */
+    __IO uint32_t RESP3;                  /* 0x01C Response3 Register */
+    __IO uint32_t BUF_DAT_PORT;           /* 0x020 Buffer Data Port */
+    __I uint32_t PRES_STATE;              /* 0x024 Present State */
+    __IO uint32_t HOST_CTRL1;             /* 0x028 Host Control 1 */
+    __IO uint32_t CLK_CTRL;               /* 0x02C Clock Control */
+    __IO uint32_t NORMAL_INTERRUPT_STAT;  /* 0x030  */
+    __IO uint32_t NORM_INTR_STAT_EN;      /* 0x034 Normal/Error Interrupt Status Enable (16-bit regs at 0x34/0x36) */
+    __IO uint32_t NORM_INTR_SIG_EN;       /* 0x038 Normal/Error Interrupt Signal Enable (16-bit regs at 0x38/0x3A) */
+    __I uint32_t AUTO_CMD12_ERROR_STATUS; /* 0x03C  */
+    __I uint32_t CAPS;                    /* 0x040 Capabilities Register */
+    uint32_t RESERVED1;                   /* Reserved, 0x044 */
     __I uint32_t MAXIMUM_CURRENT_CAPABILITIES; /* 0x048  */
     uint32_t RESERVED2[2];                     /* Reserved, 0x04C-0x053 */
     __IO uint32_t ADMA_ERROR_STATUS;           /* 0x054  (mixed access) */
@@ -734,7 +743,8 @@ typedef struct {                               /* SD/SDIO Controller (ARASAN) */
     __IO uint32_t SPI_INTERRUPT_SUPPORT;       /* 0x0F0  */
 } SDIO_Type;
 
-typedef struct {              /* SPI Controller */
+typedef struct
+{                             /* SPI Controller */
     __IO uint32_t CR;         /* 0x000 Configuration (mixed access) */
     __IO uint32_t SR;         /* 0x004 Interrupt Status (mixed access) */
     __IO uint32_t IER;        /* 0x008 Interrupt Enable (mixed access) */
@@ -751,14 +761,16 @@ typedef struct {              /* SPI Controller */
     __I uint32_t MOD_ID_REG0; /* 0x0FC  */
 } SPI_Type;
 
-typedef struct {           /* System Watchdog Timer */
+typedef struct
+{                          /* System Watchdog Timer */
     __IO uint32_t MODE;    /* 0x000  (mixed access) */
     __IO uint32_t CONTROL; /* 0x004  (mixed access) */
     __O uint32_t RESTART;  /* 0x008  */
     __I uint32_t STATUS;   /* 0x00C  */
 } SWDT_Type;
 
-typedef struct {                         /* Triple Timer Counter (3 x counters) */
+typedef struct
+{                                        /* Triple Timer Counter (3 x counters) */
     __IO uint32_t CLOCK_CONTROL_1;       /* 0x000 Clock Control Register */
     __IO uint32_t CLOCK_CONTROL_2;       /* 0x004  */
     __IO uint32_t CLOCK_CONTROL_3;       /* 0x008  */
@@ -794,7 +806,8 @@ typedef struct {                         /* Triple Timer Counter (3 x counters) 
     __I uint32_t EVENT_REGISTER_3;       /* 0x080  */
 } TTC_Type;
 
-typedef struct {           /* UART Controller (Cadence) */
+typedef struct
+{                          /* UART Controller (Cadence) */
     __IO uint32_t CR;      /* 0x000 Control Register [8:0] */
     __IO uint32_t MR;      /* 0x004 Mode Register [9:0] (mixed access) */
     __IO uint32_t IER;     /* 0x008 Interrupt Enable [12:0] (mixed access) */
@@ -814,7 +827,8 @@ typedef struct {           /* UART Controller (Cadence) */
     __IO uint32_t TXWM;    /* 0x044 TX FIFO Trigger Level [5:0] (mixed access) */
 } UART_Type;
 
-typedef struct {              /* CAN Controller */
+typedef struct
+{                             /* CAN Controller */
     __IO uint32_t SRR;        /* 0x000 Software Reset Register */
     __IO uint32_t MSR;        /* 0x004 Mode Select Register */
     __IO uint32_t BRPR;       /* 0x008 Baud Rate Prescaler */
@@ -850,7 +864,8 @@ typedef struct {              /* CAN Controller */
     __IO uint32_t AFIR4;      /* 0x080 Acceptance Filter ID 4 */
 } CAN_Type;
 
-typedef struct {                                  /* USB 2.0 ULPI Controller */
+typedef struct
+{                                                 /* USB 2.0 ULPI Controller */
     __I uint32_t ID;                              /* 0x000  */
     __IO uint32_t HWGENERAL;                      /* 0x004  */
     __I uint32_t HWHOST;                          /* 0x008  */
@@ -911,14 +926,16 @@ typedef struct {                                  /* USB 2.0 ULPI Controller */
     __IO uint32_t ENDPTCTRL11;                    /* 0x1EC  */
 } USB_Type;
 
-typedef struct {                         /* On-Chip Memory Control */
+typedef struct
+{                                        /* On-Chip Memory Control */
     __IO uint32_t OCM_PARITY_CTRL;       /* 0x000  (mixed access) */
     __IO uint32_t OCM_PARITY_ERRADDRESS; /* 0x004  (mixed access) */
     __IO uint32_t OCM_IRQ_STS;           /* 0x008  (mixed access) */
     __IO uint32_t OCM_CONTROL;           /* 0x00C  (mixed access) */
 } OCM_Type;
 
-typedef struct {                     /* Static Memory Controller (PL353 SMC) */
+typedef struct
+{                                    /* Static Memory Controller (PL353 SMC) */
     __I uint32_t MEMC_STATUS;        /* 0x000  */
     __I uint32_t MEMIF_CFG;          /* 0x004  */
     __O uint32_t MEMC_CFG_SET;       /* 0x008  */
@@ -954,7 +971,8 @@ typedef struct {                     /* Static Memory Controller (PL353 SMC) */
     __I uint32_t ECC_VALUE3_1;       /* 0x424  */
 } SMC_Type;
 
-typedef struct {                         /* AXI High-Performance Port (AFI) */
+typedef struct
+{                                        /* AXI High-Performance Port (AFI) */
     __IO uint32_t AFI_RDCHAN_CTRL;       /* 0x000  */
     __IO uint32_t AFI_RDCHAN_ISSUINGCAP; /* 0x004  */
     __IO uint32_t AFI_RDQOS;             /* 0x008  */
@@ -974,7 +992,8 @@ typedef struct {                         /* AXI High-Performance Port (AFI) */
  * below) are NOT memory mapped here: they are reached by pushing DRP
  * addresses through CMDFIFO and reading results from RDFIFO.
  */
-typedef struct {            /* XADC / ADC On-Chip (12-bit ADC) */
+typedef struct
+{                           /* XADC / ADC On-Chip (12-bit ADC) */
     __IO uint32_t CFG;      /* 0x000 Configuration Register */
     __IO uint32_t INT_STS;  /* 0x004 Interrupt Status Register */
     __IO uint32_t INT_MASK; /* 0x008 Interrupt Mask Register */
@@ -984,7 +1003,8 @@ typedef struct {            /* XADC / ADC On-Chip (12-bit ADC) */
     __IO uint32_t MCTL;     /* 0x018 Misc control register */
 } XADC_Type;
 
-typedef struct {                        /* Cortex-A9 MPCore Private Peripheral Block */
+typedef struct
+{                                       /* Cortex-A9 MPCore Private Peripheral Block */
     __IO uint32_t SCU_CONTROL;          /* 0x000 SCU Control Register */
     __I uint32_t SCU_CONFIG;            /* 0x004 SCU Configuration Register */
     __IO uint32_t SCU_CPU_POWER_STATUS; /* 0x008 SCU CPU Power Status Register */
@@ -1015,39 +1035,39 @@ typedef struct {                        /* Cortex-A9 MPCore Private Peripheral B
     __IO uint32_t WD_ISR;               /* 0x62C CPU Private Watchdog Interrupt Status Register */
 } MPCORE_Type;
 
-#define SLCR    ((SLCR_Type*)SLCR_BASE)
-#define DDRC    ((DDRC_Type*)DDRC_BASE)
-#define DEVCFG  ((DEVCFG_Type*)DEVCFG_BASE)
-#define DMAC    ((DMAC_Type*)DMAC_BASE)
-#define DMAC_NS ((DMAC_Type*)DMAC_NS_BASE)
-#define GEM0    ((GEM_Type*)GEM0_BASE)
-#define GEM1    ((GEM_Type*)GEM1_BASE)
-#define GPIO    ((GPIO_Type*)GPIO_BASE)
-#define I2C0    ((I2C_Type*)I2C0_BASE)
-#define I2C1    ((I2C_Type*)I2C1_BASE)
-#define QSPI    ((QSPI_Type*)QSPI_BASE)
-#define SDIO0   ((SDIO_Type*)SDIO0_BASE)
-#define SDIO1   ((SDIO_Type*)SDIO1_BASE)
-#define SPI0    ((SPI_Type*)SPI0_BASE)
-#define SPI1    ((SPI_Type*)SPI1_BASE)
-#define SWDT    ((SWDT_Type*)SWDT_BASE)
-#define TTC0    ((TTC_Type*)TTC0_BASE)
-#define TTC1    ((TTC_Type*)TTC1_BASE)
-#define UART0   ((UART_Type*)UART0_BASE)
-#define UART1   ((UART_Type*)UART1_BASE)
-#define CAN0    ((CAN_Type*)CAN0_BASE)
-#define CAN1    ((CAN_Type*)CAN1_BASE)
-#define USB0    ((USB_Type*)USB0_BASE)
-#define USB1    ((USB_Type*)USB1_BASE)
-#define OCM     ((OCM_Type*)OCM_BASE)
-#define SMC     ((SMC_Type*)SMC_BASE)
-#define AFI0    ((AFI_Type*)AFI0_BASE)
-#define AFI1    ((AFI_Type*)AFI1_BASE)
-#define AFI2    ((AFI_Type*)AFI2_BASE)
-#define AFI3    ((AFI_Type*)AFI3_BASE)
-#define MPCORE  ((MPCORE_Type*)MPCORE_BASE)
+#define SLCR    ((SLCR_Type *)SLCR_BASE)
+#define DDRC    ((DDRC_Type *)DDRC_BASE)
+#define DEVCFG  ((DEVCFG_Type *)DEVCFG_BASE)
+#define DMAC    ((DMAC_Type *)DMAC_BASE)
+#define DMAC_NS ((DMAC_Type *)DMAC_NS_BASE)
+#define GEM0    ((GEM_Type *)GEM0_BASE)
+#define GEM1    ((GEM_Type *)GEM1_BASE)
+#define GPIO    ((GPIO_Type *)GPIO_BASE)
+#define I2C0    ((I2C_Type *)I2C0_BASE)
+#define I2C1    ((I2C_Type *)I2C1_BASE)
+#define QSPI    ((QSPI_Type *)QSPI_BASE)
+#define SDIO0   ((SDIO_Type *)SDIO0_BASE)
+#define SDIO1   ((SDIO_Type *)SDIO1_BASE)
+#define SPI0    ((SPI_Type *)SPI0_BASE)
+#define SPI1    ((SPI_Type *)SPI1_BASE)
+#define SWDT    ((SWDT_Type *)SWDT_BASE)
+#define TTC0    ((TTC_Type *)TTC0_BASE)
+#define TTC1    ((TTC_Type *)TTC1_BASE)
+#define UART0   ((UART_Type *)UART0_BASE)
+#define UART1   ((UART_Type *)UART1_BASE)
+#define CAN0    ((CAN_Type *)CAN0_BASE)
+#define CAN1    ((CAN_Type *)CAN1_BASE)
+#define USB0    ((USB_Type *)USB0_BASE)
+#define USB1    ((USB_Type *)USB1_BASE)
+#define OCM     ((OCM_Type *)OCM_BASE)
+#define SMC     ((SMC_Type *)SMC_BASE)
+#define AFI0    ((AFI_Type *)AFI0_BASE)
+#define AFI1    ((AFI_Type *)AFI1_BASE)
+#define AFI2    ((AFI_Type *)AFI2_BASE)
+#define AFI3    ((AFI_Type *)AFI3_BASE)
+#define MPCORE  ((MPCORE_Type *)MPCORE_BASE)
 
-#define XADC ((XADC_Type*)XADC_BASE)
+#define XADC ((XADC_Type *)XADC_BASE)
 
 /*****************  SLCR keys  *****************/
 #define SLCR_LOCK_KEY   (0x767BU) /* Key to lock SLCR writes   */
@@ -2908,5 +2928,22 @@ typedef struct {                        /* Cortex-A9 MPCore Private Peripheral B
 
 #define NAND_PCELL_ID_Pos (0U)
 #define NAND_PCELL_ID_Msk (0xFFUL) /*  */
+
+/* ------------------------------------------------------------------ */
+/* soc-layer diagnostics (not part of the vendored register map)      */
+/* ------------------------------------------------------------------ */
+
+/* BootROM-era QSPI state, captured at soc_init() entry before anything
+   rewrites it - the only known-good port configuration on this board. */
+typedef struct
+{
+    uint32_t lqspi_clk_ctrl; /* SLCR LQSPI_CLK_CTRL */
+    uint32_t cr;             /* QSPI CR             */
+    uint32_t lqspi_cr;       /* QSPI LQSPI_CR       */
+    uint32_t lpbk_dly_adj;   /* QSPI LPBK_DLY_ADJ   */
+    uint32_t er;             /* QSPI ER             */
+} soc_qspi_boot_cfg;
+
+const soc_qspi_boot_cfg *soc_qspi_boot_cfg_get(void);
 
 #endif /* ZYNQ7000_H */

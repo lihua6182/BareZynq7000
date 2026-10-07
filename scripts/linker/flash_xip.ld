@@ -184,6 +184,7 @@ SECTIONS
     ASSERT((ADDR(.vectors) & 0x1F) == 0,                    ".vectors must be 32-byte aligned")
     ASSERT(__heap_end__ - __heap_start__ >= 0xC000,         "heap < 48 KiB: no room for the boot LZMA allocation")
     ASSERT(__stack_svc_end__ <= __ram_end__,                "OCM overflow: heap/exception stacks exceed RAM")
+    ASSERT(LOADADDR(.data) + SIZEOF(.data) <= ORIGIN(FLASH) + 1M, "image > 1 MiB: the qspi_probe alias at 0xFB200000 cannot span it")
 
     /DISCARD/ :
     {

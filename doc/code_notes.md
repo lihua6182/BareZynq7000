@@ -98,18 +98,141 @@ irq 常量对标内核 `IRQ_TYPE_*`；功能选择宏是 `MIO<pad>_<功能>` 形
 
 ### 启动顺序为什么是死的
 
-`mmu_init → mmu_and_caches_enable(内含 l2_cache_enable) → xip_warm_cache →
-sys_clock_init → qspi_reconfig`。CPU 全程从 flash 取指：必须先让缓存盖住 flash 窗口、
-把镜像预热进 L2，然后**从 OCM (.fast)** 重配 PLL 与 QSPI。MMU/缓存关着做时钟、
-或直接从 flash 做时钟，都会挂总线。页表放高 OCM（0xFFFF0000）非缓存段：CA9 页表
+`mmu_init → mmu_and_caches_enable(内含 l2_cache_enable) → sys_clock_init →
+qspi_reconfig`。CPU 全程从 flash 取指：重配 PLL 与 QSPI 的窗口**从 OCM (.fast)**
+执行（窗口内端口是死的）；窗口外端口始终是好的（重配前 BootROM 配置、重配后
+25MHz 直接采样，均经实测）。页表放高 OCM（0xFFFF0000）非缓存段：CA9 页表
 walker 与 D-cache 不一致。
 
-### xip_warm_cache
+### xip_warm_cache —— 已删除（2026-10-07 收官）
 
-重配后的 QSPI 线性口在这块板上读不可靠（实测），而重配后的第一次取指必然 miss
-（启动代码从未进过缓存）——所以趁 QSPI 还是 BootROM 配置时把整个镜像当数据读一遍，
-灌进 L2，重配窗口内的取指全部由 L2 供给。跨度 = `_sidata + .data 大小`
-（QSPI 里可取指内容的末尾）；若以后再往 flash 加 `AT>FLASH` 段要跟着扩。
+预热曾为"重配后端口不可靠"的 workaround，经 qspi_probe 五轮上板测量后**证伪并
+删除**。最终结论：**端口在任何合法配置下都是好的**，"不可靠"是三重假象叠加：
+
+1. **回环档全零**：SCLK > FQSPICLK2（~40MHz）必须用反馈时钟，而内部回环的反馈
+   信号也经由 MIO8 焊盘（UG585 ch.12）——本板 MIO8 未接线、`MIO_PIN_08=0x601`
+   为输入态 → 回环采样钟死 → 全零。100MHz golden（USE_LPBK）即死于此。
+2. **违规配置不可信**：回环仅 BAUD_RATE_DIV=000 有效（UG585 16591）；'q' 扫描
+   div>0 的 96 点全违规。Clock Ratio Restriction 要求 QSPI_REF_CLK > CPU_1x
+   （16817）：BootROM 复刻 REF=33.33MHz < CPU_1x=111MHz，运行期必败
+   （BootROM 时代 CPU 未提速，天然满足）。
+3. **真值用错文件**：烧录用 **app.hex**（ihex 段间间隙无记录，保持擦除态 0xFF），
+   而地面真值起初取 `crc32(app.bin)`（binary 间隙填 0x00）——两者差 2,148 字节
+   （间隙 0x8FC/4B + 0xB7A0/2144B），造成"所有合法配置读数全错"的假象。
+   以 0xFF 渲染 app.hex 后与板载读数**全幅 + 逐块完全一致**。
+
+实测矩阵：LPBK=0 直接采样在 781kHz~62.5MHz（REF 200/250 × BAUD /4~/256，含
+REF=33MHz 比值违规对照）全部读数正确；100MHz 直接采样也正确（但超 FQSPICLK2，
+不在规格内）；125MHz 真时序崩溃。**go-live 终审通过**：全缓存逐出 + ICIALLU 后
+系统纯靠 25MHz 直接采样端口运行，cdc 续行——无预热 XIP 上板实证。
+
+收编（已落地）：`qspi_reconfig` = REF IO PLL/5=200MHz（>CPU_1x）+ BAUD /8 =
+SCLK 25MHz + LPBK=0；`xip_warm_cache` 删除；启动顺序收敛为上述四步。
+**教训**：①负面"实测"也要审证据链——"预热存在 ⇒ 运行期读走 L2 ⇒ 端口无流量"
+是循环论证；②地面真值本身要先证真（烧录物是 hex 不是 bin）；③高速档（>40MHz）
+要提速必须改板（MIO8 反馈），软件无解。
+
+### qspi_probe（端口实测扫描）
+
+主循环 UART 按 `q` 触发 `probe_sweep()`。每个配置一个窗口：**关 IRQ →
+(.fast) 重配 → 非缓存全镜像 CRC → (.fast) 恢复 golden → 开 IRQ → 打印**。
+在运行期戳一个可能不可靠的端口之所以安全，靠四条：IRQ 屏蔽使 ISR 不会
+在窗口内取指 flash；重配序列在 OCM（.fast）执行；CRC 循环代码在首次
+（golden 配置下）全量预跑时已进 L1I/L2，而**非缓存数据读不产生缓存分配**，
+窗口内代码行不可能被逐出；所以坏配置的结果是 CRC 不符，而不是跑飞——
+恢复 golden 也从 OCM 做。窗口各数 ms，USB 会断流，测速时勿触发。
+
+扫描矩阵：div 0..3（SCLK = 200MHz ref 的 /2 /4 /8 /16）× DLY 0..31，
+USE_LPBK 固定 1（MIO8 焊盘环回板上未接线，无可选项）。div>0 时内部回环
+是否生效 UG585 App.A 语焉不详，靠扫出来的结果说话。判定用 zlib 多项式
+0xEDB88320，与主机 `zlib.crc32` 逐字节一致（字读小端拆 4 字节）。
+
+注意 `probe_apply_config` 是 `qspi_reconfig` 的**有意重复**：启动路径在
+测量结论出来前一行不动，重复比参数化重构安全。结论落地后两份合一。
+
+### 首轮扫描结果（2026-10-07 上板）——颠覆性
+
+主机真值 `zlib.crc32(app.bin) = A1AC2F94`（span 156,372 B）。板上结果：
+
+- **div=0（100MHz，现行配置）全部 32 个 DLY：`48773398` = crc32(全零填充)**
+  ——单拍读每个字都返回 0x00000000。"==" 全是自相一致的垃圾，不是"全通过"。
+- div=1/2/3（50/25/12.5MHz）：`C6D954A6`，96 个配置完全一致的**确定性错误**
+  （非随机噪声）；与全零/全 FF/位反/字节反/半字交换/整流 ±1 位移/nibble 交换
+  六种简单变换均不匹配——疑似 quad 通道级错乱（内部回环在 div>0 失效，
+  MIO8 焊盘环回板上未接线）。
+- **扫描空间内无任何可用配置**。单拍层面 100MHz 端口是全灭，不是"边际不可靠"。
+
+推论链重写：①"重配后读不可靠"的旧结论方向正确但程度被低估——是**全灭**；
+②运行期"稀疏读无碍"实为"几乎零流量"：L2 512KB 对 156KB 镜像 + OCM 数据
+压力极小，镜像行实际从不逐出，100MHz 端口自建板以来可能从未成功服务过
+任何访问；③删预热后 FPGA 配置失败 ≈ **突发读同样坏**的直接证据（'b' 命令
+验证）；④**唯一已知良配置是 BootROM 配置**（预热内容正确性由 LZMA/ZBLZ
+CRC 间接证明），已加 soc 层快照（`soc_qspi_boot_cfg`，soc_init 入口捕获）
++ 'c' 命令读取，下一步用 probe 复刻该配置测 CRC。
+
+命令：'q' 单拍扫描、'b' 突发扫描（缓存窗+L1D/L2 逐出，逐行打印；若 golden
+突发路径坏，恢复后的 printf 代码本身要从死端口重新取指——**LED 停闪即判决**，
+断电重启）、'c' BootROM 配置快照、'r' BootROM 复刻+BAUD 爬升。
+
+### 突发判决与 BootROM 配置（2026-10-07 第二轮上板）
+
+'b' 在 div=0 行之前挂死 → **100MHz 突发读同样全灭**（恢复路径 printf 需从
+死端口取指）。上午 FPGA 失败机理闭环：单拍、突发双灭，预热掩盖的是全端口失效。
+
+'c' 捕获的 BootROM 配置：LQSPI_CLK_CTRL=`0x2821`（SRCSEL=ARM PLL、DIV=40）、
+CR=`0x800238C9`（BAUD /4）、LQSPI_CR=`0x8000016B`（与现行同）、LPBK=`0x20`
+（回环开、**DLY=0**）。关键巧合：ARM PLL 旁路（BootROM 时）与 1333MHz
+（sys_clock_init 后）经 /40 都得 ref=33.33MHz → SCLK≈8.33MHz——该寄存器值
+在 PLL 初始化前后语义一致。突发+单拍在该配置下均由启动过程间接证明
+（预热内容过 ZBLZ CRC）。'r' 原样复刻并做 BAUD 爬升（16.7/8.3/4.2/2.1MHz），
+最快匹配构建期 crc32（tools/crc32.py，POST_BUILD 自动打印）的档即收编候选。
+
+### 'r' 复刻失败与三条违规归因（2026-10-07 第三轮上板）
+
+'r' 结果：BootROM 原样复刻在运行期**也读错**（`CC7FB459`，且在 8.33/4.17/2.08MHz
+三频点逐位一致；经全部 256 种字节填充验证**非常量填充**）；div=0（16.7MHz）=全零。
+即：**端口从未在合法配置下被测试过**，既往失败各有独立的违规原因（UG585 ch.12）：
+
+1. golden 全零：SCLK > FQSPICLK2（~40MHz）必须用反馈时钟，且内部回环同样要求
+   **MIO8 pinmux 为反馈输出并能自由翻转**（"feedback signal is received from the
+   internal input from the I/O so MIO pin 8 needs to be programmed"）；本板 MIO8
+   未接线、软件未编程 → 回环采样时钟死 → 全零。
+2. 'q' div>0 错乱：回环仅在 BAUD_RATE_DIV=000 时有效（ch.12 Configure Controller
+   "ensure qspi.Config_reg[BAUD_RATE_DIV] is set to 0b00"），div>0 带 USE_LPBK=1
+   全是违规配置，读数不可信。
+3. 'r' 复刻错乱：**Clock Ratio Restriction——QSPI_REF_CLK 必须大于 CPU_1x**。
+   运行时 CPU_1x = CPU/(4+2·CLK_621_TRUE) ≈ 111MHz（667/6）；BootROM REF=33.33MHz
+   严重违反；BootROM 时代 CPU 尚未提速，比值天然满足。这解释了"同一寄存器值
+   上电时正确、运行期错乱"。
+
+纠错：SLCR LQSPI_CLK_CTRL 的 SRCSEL 编码为 0x=IO / 10=ARM / 11=DDR（zynq_clock.h），
+`0x2821` = ARM PLL/40 = 33.33MHz，旁路与否同值（早前分析正确）。
+
+'n' 合法配置扫描（LPBK=0 直接采样，<40MHz 无需反馈时钟）：REF∈{200,250}MHz
+（均 >CPU_1x）× BAUD /2~/256 全覆盖 + BootROM 时钟树 LPBK=0 对照点（区分比值
+违规与 USE_LPBK 之罪）。任一行匹配构建期真值即为可收编配置——届时 `qspi_reconfig`
+收编该配置、删 `xip_warm_cache`、`soc_init` 移入 `.fast`，全量复测后根治完成。
+
+### 'n' 收敛：损坏与端口配置无关（2026-10-07 第四轮上板）
+
+'n' 全部合法配置 + 比值违规对照点返回**同一个** CRC：781kHz~62.5MHz（80 倍频率
+范围）、REF 200/250MHz、比值满足与违反——逐位一致。频率无关性证明**损坏不在
+QSPI 端口**，而是配置无关的系统性变换（读路径或 flash 内容本身）。边界行为全部
+符合手册：125MHz 为真时序崩溃（另一 CRC 值），回环档全零（反馈钟死；
+`mio_pin_08=00000601`：TRI_ENABLE=1、复选全 0，实证 MIO8 非反馈功能）。
+`cpu_1x=111110000Hz`（667/6，CLK_621_TRUE=1）实证比值约束：合法下限 REF>111MHz。
+
+主机侧 40+ 种变换鉴定（字节/半字/nibble/位反转、词/块置换、块内旋转、流移位、
+地址位 stuck-0/1）对实测 CRC 无一命中——不是规整变换，须直接看字节：
+
+- **'m' 逐词失配扫描**：在合法配置（REF200/BAUD /8/LPBK=0，25MHz）下，同一地址
+  分别经别名（过端口）与缓存窗（warm-L2 命中 = 启动时读出的正确数据，ZBLZ CRC
+  背书——板上自含真值，无需主机抓数）读全镜像，先跑 cached 参考 CRC（纯 warm
+  命中）再扫描，只报前 24 处 `off/alias/cached` + 总失配数。
+- **'e' go-live 终审**：应用合法配置 → 逐出 L1D+L2（全 XIP 窗）+ ICIALLU → 缓存
+  窗全镜像 CRC → **不恢复 golden**：cdc 报告续行即"XIP 无预热"实证（根治完成态）；
+  LED 停闪即判决。go-live 后 `probe_frozen` 锁死其余 probe 按键（恢复 golden
+  必挂）。
 
 ### L2 投机预取必须关
 
@@ -117,11 +240,14 @@ PL310 AUX_CNT bit28/29（IPFE/DPFE）与 ACTLR bit1 开着时，预取器会在 
 几微秒里往已死的 flash 发读 → Prefetch Abort 风暴（上板验证过）。只保留需求式行填充，
 100 MHz XIP 才稳。TAG/DATA RAM 延迟寄存器（0x108/0x10C）不在 CMSIS 结构体里，按偏移写。
 
-### qspi_reconfig 目标状态
+### qspi_reconfig 目标状态（2026-10-07 收编后）
 
-QSPI ref = IO PLL/5 = 200 MHz、SCLK = 100 MHz、LPBK_DLY_ADJ[USE_LPBK]=1 内部回环采样
-（DLY 保持复位值；MIO8/9 不复用、板上未接线，SCLK_FB 焊盘环回路径关闭）；退出 linear
-模式前必须排空 FIFO（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
+QSPI ref = IO PLL/5 = 200 MHz（> CPU_1x=111MHz，ch.12 比值约束）、SCLK = ref/8 =
+25 MHz（CR=`0x800238D1`，BAUD_RATE_DIV=010）、LPBK_DLY_ADJ=0 **直接焊盘采样**。
+>40MHz 需 MIO8 反馈时钟（板上未接线、`MIO_PIN_08=0x601` 输入态），内部回环路径
+无反馈钟即死（全零），故回环一律禁用；25MHz 是无需改板的规格内最快档（100MHz
+直接采样实测可读但超 FQSPICLK2 规格，不采用）。退出 linear 模式前必须排空 FIFO
+（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
 
 ---
 
