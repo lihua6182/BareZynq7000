@@ -89,8 +89,10 @@ irq 常量对标内核 `IRQ_TYPE_*`；功能选择宏是 `MIO<pad>_<功能>` 形
 
 - TTC 中断寄存器 **clear-on-read**（不是 W1C）：handler 里读一次即清电平源，
   随后分发器 EOI 才能真正结束。
-- **handler 不能放 `.fast` 段**：该段 VMA 从 0 起址，段内第一个函数地址就是 0，
+- **handler 曾经不能放 `.fast`**：旧布局 `.fast` VMA 从 0 起址，第一个函数地址是 0，
   `irq_attach()` 的 NULL 检查会静默拒绑——tick 就这么死过一次（2026-09-29）。
+  现在 RAM 0 起 32B 是 `.null_guard`，`.fast` 在其后；ISR 仍放 XIP（`.fast` 只给
+  时钟/QSPI 窗口用）。
 
 ---
 
@@ -98,10 +100,13 @@ irq 常量对标内核 `IRQ_TYPE_*`；功能选择宏是 `MIO<pad>_<功能>` 形
 
 ### 启动顺序为什么是死的
 
-`mmu_init → mmu_and_caches_enable(内含 l2_cache_enable) → sys_clock_init →
-qspi_reconfig`。CPU 全程从 flash 取指：重配 PLL 与 QSPI 的窗口**从 OCM (.fast)**
-执行（窗口内端口是死的）；窗口外端口始终是好的（重配前 BootROM 配置、重配后
-25MHz 直接采样，均经实测）。页表放高 OCM（0xFFFF0000）非缓存段：CA9 页表
+`mmu_init → mmu_and_caches_enable(内含 l2_cache_enable) →
+sys_clock_and_qspi_reconfig(.fast：sys_clock_init 紧接 qspi_reconfig) →
+irq_init → tick_init`。CPU 全程从 flash 取指，但 **PLL 提速与 QSPI 重配必须在同一次
+OCM 调用里做完**：`sys_clock_init` 把 CPU_1x 拉到 111MHz 时 QSPI 仍是 BootROM
+~33MHz ref，违反 ch.12 比值，中间若返回 flash 取指就踩窗口。`soc_init` 本身留在
+flash（MMU/irq/tick 不必进低 OCM）。窗口内端口是死的；窗口外端口始终是好的（重配前
+BootROM 配置、重配后 25MHz 直接采样，均经实测）。页表放高 OCM（0xFFFF0000）非缓存段：CA9 页表
 walker 与 D-cache 不一致。
 
 ### xip_warm_cache —— 已删除（2026-10-07 收官）
@@ -127,7 +132,8 @@ REF=33MHz 比值违规对照）全部读数正确；100MHz 直接采样也正确
 系统纯靠 25MHz 直接采样端口运行，cdc 续行——无预热 XIP 上板实证。
 
 收编（已落地）：`qspi_reconfig` = REF IO PLL/5=200MHz（>CPU_1x）+ BAUD /8 =
-SCLK 25MHz + LPBK=0；`xip_warm_cache` 删除；启动顺序收敛为上述四步。
+SCLK 25MHz + LPBK=0；`xip_warm_cache` 删除。比值窗口后来收到
+`sys_clock_and_qspi_reconfig`（.fast 一次调用，不是把整个 `soc_init` 搬进 OCM）。
 **教训**：①负面"实测"也要审证据链——"预热存在 ⇒ 运行期读走 L2 ⇒ 端口无流量"
 是循环论证；②地面真值本身要先证真（烧录物是 hex 不是 bin）；③高速档（>40MHz）
 要提速必须改板（MIO8 反馈），软件无解。
@@ -242,7 +248,7 @@ QSPI 端口**，而是配置无关的系统性变换（读路径或 flash 内容
 
 PL310 AUX_CNT bit28/29（IPFE/DPFE）与 ACTLR bit1 开着时，预取器会在 QSPI 重配的
 几微秒里往已死的 flash 发读 → Prefetch Abort 风暴（上板验证过）。只保留需求式行填充，
-100 MHz XIP 才稳。TAG/DATA RAM 延迟寄存器（0x108/0x10C）不在 CMSIS 结构体里，按偏移写。
+25 MHz XIP 才稳。TAG/DATA RAM 延迟寄存器（0x108/0x10C）不在 CMSIS 结构体里，按偏移写。
 
 ### qspi_reconfig 目标状态（2026-10-07 收编后）
 
@@ -250,8 +256,11 @@ QSPI ref = IO PLL/5 = 200 MHz（> CPU_1x=111MHz，ch.12 比值约束）、SCLK =
 25 MHz（CR=`0x800238D1`，BAUD_RATE_DIV=010）、LPBK_DLY_ADJ=0 **直接焊盘采样**。
 >40MHz 需 MIO8 反馈时钟（板上未接线、`MIO_PIN_08=0x601` 输入态），内部回环路径
 无反馈钟即死（全零），故回环一律禁用；25MHz 是无需改板的规格内最快档（100MHz
-直接采样实测可读但超 FQSPICLK2 规格，不采用）。退出 linear 模式前必须排空 FIFO
-（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
+直接采样实测可读但超 FQSPICLK2 规格，不采用）。退出 linear 模式前必须排空 Rx 与 Tx FIFO（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
+复位后还原的是保存的 BootROM `LQSPI_CR`（读指令 0x6B + LINEAR），不是复位值
+`0x8000016B`。`SPI_EN` 之后 `__DSB(); __ISB();` 再回 flash（控制器 SO、XIP 窗 WB）。
+PLL 失锁则跳过 `qspi_reconfig`：ARM 失锁保持 bypass；IO 失锁把 ARM 拉回 bypass，
+避免 CPU_1x=111MHz 仍走 BootROM 33MHz ref。
 
 ---
 

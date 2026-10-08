@@ -3,7 +3,8 @@
 
 /*
  * Driver for the proto_coproc protocol co-processor (a PL AXI4-Lite IP,
- * sources at C:\WorkSpace\SIC1 - see its README.md for the ISA). The IP
+ * not a Zynq PS peripheral; lives in driver/pl/). Sources at
+ * C:\WorkSpace\SIC1 - see its README.md for the ISA. The IP
  * executes a 32-bit program out of an on-chip BRAM and shifts SPI/SWD/
  * JTAG/QSPI style bit streams on the PL gpio_o/gpio_oe pins with cycle
  * exact timing; data moves through a TX FIFO (pushed here) and an RX

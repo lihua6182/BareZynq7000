@@ -16,6 +16,7 @@
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
 #include "zynq_soc.h"
+#include "zynq_tick.h"
 #include "zynq_usb.h"
 
 /* ------------------------------------------------------------------ */

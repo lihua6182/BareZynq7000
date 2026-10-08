@@ -165,7 +165,7 @@ _start:
         ldr     sp, =__stack_svc_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x1F                   /* System mode                 */
+        orr     r1, r0, #0x1F                   /* System mode (main); 1 KiB at RAM top, shared with the unused SVC slot */
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_end__
         bic     sp, sp, #0x7
@@ -202,7 +202,17 @@ _start:
         cmp     r0, r1
         blo     .Lbss_zero
 
-        /* .fast must be resident before soc_init runs from it. */
+        ldr     r0, =__no_cache_ram_start__     /* DMA RAM; mmu_table is separate */
+        ldr     r1, =__no_cache_ram_end__
+        mov     r2, #0
+        b       .Lnc_test
+.Lnc_zero:
+        str     r2, [r0], #4
+.Lnc_test:
+        cmp     r0, r1
+        blo     .Lnc_zero
+
+        /* .fast (PLL+QSPI reconfig) must be in OCM before soc_init. */
         bl      soc_init
 
         ldr     r4, =__preinit_array_start

@@ -4,6 +4,7 @@
 /**
  * @file zynq_swd.h
  * @brief SWD 访问层 (CMSIS-DAP 风格): 主机侧命令打包 + 阻塞收发。
+ *        经 proto_coproc 移位, 不是 PS 外设; 与 zynq_ppc 同在 driver/pl/。
  *
  * PPC 侧程序: C:\WorkSpace\PPC\examples\swd_dap.s (命令驱动, 协议表见其头部):
  *   配置  [turnaround, idle]              (RUN 前推 2 个字)

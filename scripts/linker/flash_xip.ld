@@ -7,14 +7,11 @@ MEMORY
     FLASH        (rx)  : ORIGIN = 0xFC000000, LENGTH = 16M
 }
 
-__ram_start__                   = ORIGIN(RAM);
-__ram_end__                     = ORIGIN(RAM) + LENGTH(RAM);
-__flash_start__                 = ORIGIN(FLASH);
-__flash_end__                   = ORIGIN(FLASH) + LENGTH(FLASH);
+__ram_end__ = ORIGIN(RAM) + LENGTH(RAM);
 
 SECTIONS
 {
-    /* Zynq boot header */
+    /* Zynq boot header (UG585 ch.6), must occupy [0, 0x8C0). */
     .boot_header ORIGIN(FLASH) :
     {
         __boot_header_start__ = .;
@@ -22,11 +19,11 @@ SECTIONS
         __boot_header_end__ = .;
     } > FLASH
 
-    /* ARM exception vector table (8 entries + literal pool). The IRQ slot
-       is overridden at link time by the dispatcher in zynq_irq.c. */
+    /* VBAR: 8 ARM vectors + literal pool. 0x8C0 is already 32-byte aligned.
+       The IRQ slot still points at irq_handler; zynq_irq.c supplies the
+       strong definition that overrides the weak hang in zynq_startup.s. */
     .vectors ORIGIN(FLASH) + 0x8C0 :
     {
-        . = ALIGN(32);
         __vectors_start__ = .;
         KEEP(*(.vectors))
         __vectors_end__ = .;
@@ -63,14 +60,15 @@ SECTIONS
         __exidx_end = .;
     } > FLASH
 
-    /* C/C++ preinit/init/fini arrays remain in XIP flash. */
+    /* preinit/init are called from zynq_startup.s; fini is never run
+       (main does not return) but GCC may still emit the section. */
     .init_array :
     {
         . = ALIGN(4);
         __preinit_array_start = .;
         KEEP(*(.preinit_array))
         __preinit_array_end = .;
-        
+
         __init_array_start = .;
         KEEP(*(SORT(.init_array.*)))
         KEEP(*(.init_array))
@@ -88,21 +86,14 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
-    /* RAM retained across warm reset. Never cleared by zynq_startup.s.
-       NOTE: with the L2 cache off, dirty L1 lines are lost on reset, so
-       retention only holds for data that was cleaned out of the D-cache
-       before the reset. */
-    .non_init (NOLOAD) :
+    /* 32 B at VA 0: NULL writes and irq_attach(NULL) cannot land in .fast. */
+    .null_guard (NOLOAD) :
     {
-        . = ALIGN(16);
-        __non_init_start__ = .;
-        KEEP(*(.non_init))
-        *(.non_init.*)
-        . = ALIGN(4);
-        __non_init_end__ = .;
+        . = . + 32;
     } > RAM
 
-    /* Non-cacheable application RAM, DMA-reachable. */
+    /* MMU table first (16 KB aligned; 0xFFFF0000 already is), then DMA RAM.
+       NOLOAD: startup zeros .no_cache_ram; mmu_init fills the table. */
     .no_cache_ram (NOLOAD) :
     {
         . = ALIGN(16384);
@@ -115,7 +106,7 @@ SECTIONS
         __no_cache_ram_end__ = .;
     } > NO_CACHE_RAM
 
-    /* Fast RAM code: VMA in OCM, load image in QSPI. */
+    /* Fast RAM code: VMA in OCM (after the NULL guard), LMA in QSPI. */
     .fast :
     {
         . = ALIGN(4);
@@ -126,7 +117,6 @@ SECTIONS
     } > RAM AT > FLASH
     __fast_load__ = LOADADDR(.fast);
 
-    /* Initialized data */
     .data :
     {
         . = ALIGN(4);
@@ -140,7 +130,6 @@ SECTIONS
     } > RAM AT > FLASH
     _sidata = LOADADDR(.data);
 
-    /* Zero-initialized data */
     .bss (NOLOAD) :
     {
         . = ALIGN(4);
@@ -152,38 +141,28 @@ SECTIONS
         _ebss = .;
     } > RAM
 
-    /* Exception stacks anchored at the top of RAM, growing down. */
-    __stack_svc_end__   = __ram_end__;
-    __stack_svc_start__ = __stack_svc_end__ - 0x400;   /* 1 KiB */
+    /* Stacks grow down from RAM top. SYS (main) and the SVC slot share the
+       same 1 KiB — _start sets SVC SP then switches to SYS with the same
+       top; SVC is unused after that. IRQ/UND/FIQ/ABT are separate. */
+    __stack_end__     = __ram_end__;           /* SYS / main */
+    __stack_svc_end__ = __ram_end__;           /* same 1 KiB, abandoned after mode switch */
+    __stack_irq_end__ = __ram_end__ - 0x400;
+    __stack_und_end__ = __stack_irq_end__ - 0x400;
+    __stack_fiq_end__ = __stack_und_end__ - 0x100;
+    __stack_abt_end__ = __stack_fiq_end__ - 0x100;
+    __stack_abt_start__ = __stack_abt_end__ - 0x100;
 
-    __stack_irq_end__   = __stack_svc_start__;
-    __stack_irq_start__ = __stack_irq_end__ - 0x400;   /* 1 KiB */
+    /* Heap: .bss up to the abort stack. LZMA boot decode ~38 KiB, then free. */
+    __heap_start__ = ALIGN(_ebss, 8);
+    __heap_end__   = __stack_abt_start__;
 
-    __stack_und_end__   = __stack_irq_start__;
-    __stack_und_start__ = __stack_und_end__ - 0x100;   /* 256 B */
-
-    __stack_fiq_end__   = __stack_und_start__;
-    __stack_fiq_start__ = __stack_fiq_end__ - 0x100;   /* 256 B */
-
-    __stack_abt_end__   = __stack_fiq_start__;
-    __stack_abt_start__ = __stack_abt_end__ - 0x100;   /* 256 B */
-
-    /* Heap fills everything between .bss and the stacks: the LZMA working
-       memory (dict window + probs, ~38 KiB) is malloc'd from it while
-       board_init() loads the PL and freed right after. */
-    __heap_start__      = ALIGN(_ebss, 8);
-    __heap_end__        = __stack_abt_start__;
-
-    __stack_end__ = __ram_end__;
-    _estack       = __stack_end__;
-    _end          = __heap_start__;
-
-    /* Link-time sanity checks. */
     ASSERT(SIZEOF(.boot_header) <= 0x8C0,                   ".boot_header overlaps the 0x8C0 XIP payload boundary")
     ASSERT(ADDR(.vectors) == ORIGIN(FLASH) + 0x8C0,         ".vectors must start at 0xFC0008C0")
     ASSERT((ADDR(.vectors) & 0x1F) == 0,                    ".vectors must be 32-byte aligned")
+    ASSERT(ADDR(.fast) >= 32,                               ".fast must not start at NULL")
+    ASSERT(_ebss <= __stack_abt_start__,                    "OCM overflow: .bss collided with exception stacks")
+    ASSERT(__heap_start__ <= __heap_end__,                  "OCM overflow: heap start past heap end")
     ASSERT(__heap_end__ - __heap_start__ >= 0xC000,         "heap < 48 KiB: no room for the boot LZMA allocation")
-    ASSERT(__stack_svc_end__ <= __ram_end__,                "OCM overflow: heap/exception stacks exceed RAM")
 
     /DISCARD/ :
     {

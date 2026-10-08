@@ -10,6 +10,11 @@
 
 #include "board.h"
 
+#include "zynq_irq.h"
+#include "zynq_mio.h"
+#include "zynq_soc.h"
+#include "zynq_tick.h"
+
 /* CherryUSB chipidea port 的中断入口 (usb_dc_chipidea.c, 未在公共头声明)。 */
 extern void USBD_IRQHandler(uint8_t busid);
 

@@ -26,7 +26,7 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 2. Flash的0KB处(`0xFC00_0000`)放置镜像头(`.boot_header`)。
 3. Flash的`0x8C0`处(`0xFC00_08C0`)放置中断向量表。
 4. BootROM读取Flash头部的`.boot_header`块，不复制fsbl（XIP），直接跳转到镜像起始处的向量表首项进入`reset_handler`。
-5. `soc_init()`按UG585第25章的PLL更新序列把时钟配置到UG585表25-3（6:2:1模式）示例1的状态：CPU 667MHz、外设总线CPU_1x 111MHz、QSPI参考 IO PLL/5 = 200MHz，Flash实际SCLK=25MHz（W25Q128JV四线0x6B读，BAUD /8 直接采样：CR=`0x800238D1`，LPBK_DLY_ADJ保持复位值；MIO8/9不复用——板上未接线，>40MHz所需的SCLK_FB反馈钟不可用，25MHz是免改板的规格内最快档）。启动顺序：`mmu_init → mmu_and_caches_enable(含L2) → sys_clock_init → qspi_reconfig`；重配窗口（端口死区）内CPU必须处于OCM的`.fast`段执行，L2投机预取保持关闭（否则预取踩死flash）。QSPI参数切换在`.fast`段中按UG585第12章流程执行：退出linear模式→排空FIFO→改时钟并脉冲复位两个控制器复位域→重编程控制器寄存器→重新进入linear模式。曾用`xip_warm_cache()`把整个XIP镜像预灌L2缓存，2026-10-07经qspi_probe五轮上板测量定案后**已删除**——端口在合法配置下可靠（历史排查全记录见`doc/code_notes.md`）。时钟参数：晶振频率（`PS_CLK_HZ`，33.333MHz）在`source/soc/zynq_common.h`中配置，是全工程唯一硬编码的频率；其余所有时钟频率（PLL/CPU/外设参考时钟等）在运行时由`zynq_clock.c`的`clock_freqs_get()`从SLCR寄存器读出。
+5. `soc_init()`按UG585第25章的PLL更新序列把时钟配置到UG585表25-3（6:2:1模式）示例1的状态：CPU 667MHz、外设总线CPU_1x 111MHz、QSPI参考 IO PLL/5 = 200MHz，Flash实际SCLK=25MHz（W25Q128JV四线0x6B读，BAUD /8 直接采样：CR=`0x800238D1`，LPBK_DLY_ADJ保持复位值；MIO8/9不复用——板上未接线，>40MHz所需的SCLK_FB反馈钟不可用，25MHz是免改板的规格内最快档）。启动顺序：`mmu_init → mmu_and_caches_enable(含L2) → sys_clock_and_qspi_reconfig(.fast：sys_clock_init 紧接 qspi_reconfig，中间不回flash) → irq_init → tick_init`。提钟后 CPU_1x=111MHz、QSPI 仍是 BootROM ~33MHz ref，违反 ch.12 比值，故两步必须同一次 OCM 调用做完。重配窗口（端口死区）内CPU必须处于OCM的`.fast`段执行，L2投机预取保持关闭（否则预取踩死flash）。QSPI参数切换在`.fast`段中按UG585第12章流程执行：退出linear模式→排空FIFO→改时钟并脉冲复位两个控制器复位域→重编程控制器寄存器→重新进入linear模式。曾用`xip_warm_cache()`把整个XIP镜像预灌L2缓存，2026-10-07经qspi_probe五轮上板测量定案后**已删除**——端口在合法配置下可靠（历史排查全记录见`doc/code_notes.md`）。时钟参数：晶振频率（`PS_CLK_HZ`，33.333MHz）在`source/soc/zynq_common.h`中配置，是全工程唯一硬编码的频率；其余所有时钟频率（PLL/CPU/外设参考时钟等）在运行时由`zynq_clock.c`的`clock_freqs_get()`从SLCR寄存器读出。
 
 ## 源码结构
 
@@ -36,7 +36,8 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
               board_fpga（PL 配置 + PL 控制面，手写）、board_fpga_bitstream（PL 镜像，生成物）
   driver/     PS 外设：zynq_mio（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart、
               zynq_usb（USB0 控制器原语 + dcache 钩子，模块词 usb_）、zynq_dma（PL330 微码搬运）、
-              zynq_cache（L1/PL310 维护）、zynq_ppc（proto_coproc 访问）、zynq_swd（SWD 访问层）
+              zynq_cache（L1/PL310 维护）；
+              driver/pl/：PL IP（非 PS）zynq_ppc（proto_coproc 访问）、zynq_swd（SWD 访问层）
   soc/        zynq_startup.s、zynq_soc（MMU/L2/时钟/QSPI 启动）、zynq_clock（时钟树）、
               zynq_irq（GIC）、zynq_tick（TTC0）、zynq_boot_header、寄存器头 + CMSIS Core(A) 子集
   middleware/ cherryusb（vendored v1.6.1 最小设备栈：usbd_core + CDC ACM + chipidea port）、
@@ -58,7 +59,7 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 - 上一代 PL 设计（Vivado `C:\WorkSpace\fpga\project_1`）：SmartConnect + **axi_bram_ctrl @ 0x4000_0000，8 KB**，
   复位全接 `FCLK_RESET0_N`（配套的 `bram_test()` 已随 `main()` 改造移除）。
 - proto_coproc 协议协处理器 @ 0x4000_0000（MioLink 工程 IP v1.2，PL 时钟域 = FCLK0 = 100MHz；
-  **当前板上跑的是 MioLink 这一代**）。驱动 `driver/zynq_ppc.*`/`zynq_swd.*` 已入树；
+  **当前板上跑的是 MioLink 这一代**）。驱动 `driver/pl/zynq_ppc.*`/`zynq_swd.*` 已入树；
   PPC 侧例程的独立测试镜像（tests/ 下 dma_test/ppc_stress/swd_test）仍在 stash "SWD测试"。
   `main()` 现在跑的是下面的 USB CDC 双向吞吐基准。
 - **USB CDC ACM 双向吞吐基准**（`main()` 当前内容）：Zynq-7000 的 USB 控制器是 **ChipIdea usb2 2.20a**
@@ -137,11 +138,11 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   | `clock_` | `zynq_clock.h` | 时钟树读回（`clock_freqs_get`）+ PL 时钟路由（`clock_fclk_config` / `clock_fclk_enable` / `clock_fclk_freq_get`） |
   | `irq_` | `zynq_irq.h` | GIC 分发 |
   | `tick_` | `zynq_tick.h` | TTC0 毫秒 tick |
-  | `board_` | `board.h` | 板级 bring-up 与外设接线（board.c：console/LED/PL；board_usb.c：USB0 接线 + CherryUSB 钩子 `usb_dc_low_level_init`，名字是 middleware 契约） |
+  | `board_` | `board.h` | 板级 bring-up 与外设接线（只导出 `BOARD_*` 宏和 `board_*` API；board.c：console/LED/PL；board_usb.c：USB0 接线 + CherryUSB 钩子 `usb_dc_low_level_init`，名字是 middleware 契约） |
   | `fpga_` | `board_fpga.h`、`board_fpga_bitstream.h` | PL 配置与控制面 / PL 镜像数据 |
   | `soc_` | `zynq_soc.c` | SoC 启动（MMU/L2/时钟/QSPI） |
-  | `coproc_` | `zynq_ppc.h` | proto_coproc 协议协处理器访问（PL AXI4-Lite IP @ 0x4000_0000，SPI/SWD/JTAG 移位时序） |
-  | `swd_` | `zynq_swd.h` | SWD 访问层（CMSIS-DAP 风格，经 proto_coproc 移位；PPC 侧程序 `swd_dap.s`） |
+  | `coproc_` | `driver/pl/zynq_ppc.h` | proto_coproc 协议协处理器访问（PL AXI4-Lite IP @ 0x4000_0000，SPI/SWD/JTAG 移位时序；不是 PS 外设） |
+  | `swd_` | `driver/pl/zynq_swd.h` | SWD 访问层（CMSIS-DAP 风格，经 proto_coproc 移位；PPC 侧程序 `swd_dap.s`） |
 
   **模块词与文件名一一对应**：`zynq_clock.c/h` ↔ `clock_`、`zynq_soc.c` ↔ `soc_`、`zynq_mio.c/h` ↔ `mio_`……
   两者对不上时**改文件名**（如 `zynq_system.c` → `zynq_soc.c`、`zynq_gpio.c` 并入 `zynq_mio.c`），
@@ -152,5 +153,5 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
 - **注释写给人看（2026-09-30 用户定）**：一句话说清做什么/参数是谁，硬约束一行 `@note`；
   背景、取舍、排雷记录放 `doc/code_notes.md`，不进源码。`.c` 函数注释保持 Doxygen 骨架
   （`@brief` / `@param` / `@return`），每文件带 `@file`。
-- 中断处理函数**不要**放进 `.fast` 段（该段从地址 0 起址，函数地址会是 0，被带 NULL 检查的注册接口拒收）。
+- `.fast` 是 OCM 里的时钟/QSPI 重配窗口；向量/ISR 放 XIP。RAM 0 起 32 字节是 `.null_guard`，避免空指针和 `irq_attach(NULL)` 打到 `.fast`。
 

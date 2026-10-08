@@ -2,14 +2,12 @@
 #define BOARD_H
 
 #include "board_fpga.h"
-#include "zynq_irq.h"
-#include "zynq_mio.h"
 #include "zynq_soc.h"
-#include "zynq_tick.h"
-#include "zynq_uart.h"
 
 /* ------------------------------------------------------------------ */
 /* 板级配置: 改这里即可换 LED / 控制台串口 / USB 的引脚                 */
+/* 本头只导出 BOARD_* 宏和 board_* API; 实现文件各自 include 驱动头。   */
+/* UART0 / USB0 来自 zynq_soc.h, 供 BOARD_UART / BOARD_USB 取实例。     */
 /* ------------------------------------------------------------------ */
 
 /* LED: 推挽输出 (任意 MIO 脚, GPIO 为 L0 复用, 全脚一致)。 */

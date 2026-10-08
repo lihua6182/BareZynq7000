@@ -28,9 +28,14 @@ static uint32_t mmu_table[MMU_TABLE_ENTRIES] __attribute__((aligned(16384), sect
 
 #define TT_ENTRY(phys_mb, attr) ((((uint32_t)(phys_mb)) << 20) | (attr) | TT_DOMAIN_0 | TT_SECTION)
 
-/* Must run from OCM during the QSPI/clock reconfiguration window. */
+/* Must run from OCM during the QSPI/clock reconfiguration window.
+   sys_clock_init speeds CPU_1x to 111 MHz while QSPI is still the
+   BootROM ~33 MHz ref (ch.12 ratio violated until qspi_reconfig
+   finishes). Call both only via sys_clock_and_qspi_reconfig so the
+   CPU never returns to flash in that window. */
 static void qspi_reconfig(void) __attribute__((section(".fast"), noinline));
-static void sys_clock_init(void) __attribute__((section(".fast"), noinline));
+static bool sys_clock_init(void) __attribute__((section(".fast"), noinline));
+static void sys_clock_and_qspi_reconfig(void) __attribute__((section(".fast"), noinline));
 
 /* PLL lock wait: the loop runs from .fast in OCM, ~10 us at 667 MHz. */
 #define PLL_LOCK_POLL_LIMIT (100000U)
@@ -105,18 +110,27 @@ static void qspi_reconfig(void)
     uint32_t lqspi_cr;
     uint32_t i;
 
-    /* 1. Leave linear mode; CPU keeps running from OCM. */
+    /* 1. Leave linear mode; CPU keeps running from OCM. Keep the saved
+       word (BootROM opcode, LINEAR=1) to restore after the reset. */
     lqspi_cr = QSPI->LQSPI_CR;
-    QSPI->LQSPI_CR = lqspi_cr & ~(1U << 31); /* LQ_MODE = 0 */
+    QSPI->LQSPI_CR = lqspi_cr & ~QSPI_LQSPI_CR_LINEAR_Msk;
 
-    /* 2. Drain RxFIFO (63 deep): stop once SR[4] = 0. */
+    /* 2. Drain both FIFOs (ch.12). Rx: pop while RXNEMPTY. Tx: wait for
+       TXOW (fill at or below watermark; empty after leaving linear). */
     for (i = 0U; i < 64U; i++)
     {
-        if ((QSPI->SR & (1U << 4)) == 0U)
+        if ((QSPI->SR & QSPI_IXR_RXNEMPTY_Msk) == 0U)
         {
             break;
         }
         (void)QSPI->RXD;
+    }
+    for (i = 0U; i < 64U; i++)
+    {
+        if ((QSPI->SR & QSPI_IXR_TXOW_Msk) != 0U)
+        {
+            break;
+        }
     }
 
     /* 3. Ref clk to IO PLL/5, then pulse both resets (clears regs, Table 12-6). */
@@ -133,15 +147,20 @@ static void qspi_reconfig(void)
     }
     SLCR->LOCK = SLCR_LOCK_KEY;
 
-    /* 4. Reprogram controller, re-enter linear mode (LQSPI_CR = 0x8000016B).
-       CR = BootROM base 0x800238C1 with BAUD_RATE_DIV = 010 -> SCLK =
-       ref/8 = 25 MHz. LPBK_DLY_ADJ = 0: direct pad sampling - the MIO8
-       feedback path is not routed on this board, so loopback capture is
-       dead and must not be enabled. */
+    /* 4. Reprogram controller and re-enter linear with the saved BootROM
+       LQSPI_CR (not the reset value 0x8000016B). CR = BootROM 0x800238C1
+       with BAUD_RATE_DIV = 010 -> SCLK = ref/8 = 25 MHz. LPBK_DLY_ADJ = 0:
+       direct pad sampling - MIO8 feedback is not routed, so loopback
+       capture is dead and must not be enabled. */
     QSPI->CR = 0x800238D1U;
     QSPI->LPBK_DLY_ADJ = 0U;
-    QSPI->LQSPI_CR = lqspi_cr; /* LQ_MODE = 1                    */
+    QSPI->LQSPI_CR = lqspi_cr; /* LINEAR=1, BootROM read opcode   */
     QSPI->ER = 1U;             /* SPI_EN = 1                     */
+
+    /* Controller is SO; XIP window is WB. Drain the enable before any
+       subsequent instruction fetch from 0xFC00_0000. */
+    __DSB();
+    __ISB();
 }
 
 /**
@@ -152,24 +171,27 @@ static void qspi_reconfig(void)
  *         bypass and returns early. DDR PLL untouched.
  *
  * @note Runs from OCM (.fast) during the reconfiguration window.
+ * @return true if ARM and IO PLLs locked (QSPI may switch to IO PLL/5);
+ *         false if a PLL stayed in bypass (keep BootROM QSPI).
  */
-static void sys_clock_init(void)
+static bool sys_clock_init(void)
 {
-    uint32_t ctrl;
+    uint32_t arm_ctrl;
+    uint32_t io_ctrl;
     uint32_t retry;
 
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
 
     /* ARM PLL FDIV 40, CFG 250/2/2 (Table 25-6). */
-    ctrl = SLCR->ARM_PLL_CTRL;
-    ctrl = (ctrl & ~(0x7FU << 12)) | (40UL << 12);
-    SLCR->ARM_PLL_CTRL = ctrl;
+    arm_ctrl = SLCR->ARM_PLL_CTRL;
+    arm_ctrl = (arm_ctrl & ~(0x7FU << 12)) | (40UL << 12);
+    SLCR->ARM_PLL_CTRL = arm_ctrl;
 
     SLCR->ARM_PLL_CFG = ((uint32_t)250UL << 12) | ((uint32_t)2UL << 8) | ((uint32_t)2UL << 4);
 
-    SLCR->ARM_PLL_CTRL = ctrl | (1U << 4);             /* force bypass     */
-    SLCR->ARM_PLL_CTRL = ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
-    SLCR->ARM_PLL_CTRL = ctrl | (1U << 4);             /* de-assert reset  */
+    SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4);             /* force bypass     */
+    SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
+    SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4);             /* de-assert reset  */
 
     for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
     {
@@ -180,28 +202,28 @@ static void sys_clock_init(void)
     }
     if (retry == PLL_LOCK_POLL_LIMIT)
     {
-        /* ARM PLL failed to lock: keep bypass clocks, return. */
+        /* ARM PLL failed to lock: keep bypass clocks, keep BootROM QSPI. */
         SLCR->LOCK = SLCR_LOCK_KEY;
-        return;
+        return false;
     }
 
-    SLCR->ARM_PLL_CTRL = ctrl; /* leave bypass */
+    SLCR->ARM_PLL_CTRL = arm_ctrl; /* leave bypass */
 
     /* CPU = ARM PLL / 2. */
     SLCR->ARM_CLK_CTRL = 0x1F000200U;
 
     /* IO PLL FDIV 30 -> 1000 MHz, CFG 325/2/12 (Table 25-6). */
-    ctrl = SLCR->IO_PLL_CTRL;
-    ctrl = (ctrl & ~(0x7FU << 12)) | (30UL << 12);
-    SLCR->IO_PLL_CTRL = ctrl;
+    io_ctrl = SLCR->IO_PLL_CTRL;
+    io_ctrl = (io_ctrl & ~(0x7FU << 12)) | (30UL << 12);
+    SLCR->IO_PLL_CTRL = io_ctrl;
 
     SLCR->IO_PLL_CFG = (325UL << 12) | /* LOCK_CNT = 325 */
                        (2UL << 8) |    /* CP       = 2  */
                        (12UL << 4);    /* RES      = 12 */
 
-    SLCR->IO_PLL_CTRL = ctrl | (1U << 4);             /* force bypass     */
-    SLCR->IO_PLL_CTRL = ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
-    SLCR->IO_PLL_CTRL = ctrl | (1U << 4);             /* de-assert reset  */
+    SLCR->IO_PLL_CTRL = io_ctrl | (1U << 4);             /* force bypass     */
+    SLCR->IO_PLL_CTRL = io_ctrl | (1U << 4) | (1U << 0); /* assert PLL_RESET */
+    SLCR->IO_PLL_CTRL = io_ctrl | (1U << 4);             /* de-assert reset  */
 
     for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
     {
@@ -212,14 +234,17 @@ static void sys_clock_init(void)
     }
     if (retry == PLL_LOCK_POLL_LIMIT)
     {
-        /* IO PLL failed to lock: keep bypassed, leave QSPI on ARM PLL. */
+        /* IO PLL failed: put ARM back in bypass so CPU_1x drops below
+           the BootROM QSPI ref, then skip qspi_reconfig. */
+        SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4);
         SLCR->LOCK = SLCR_LOCK_KEY;
-        return;
+        return false;
     }
 
-    SLCR->IO_PLL_CTRL = ctrl; /* leave bypass */
+    SLCR->IO_PLL_CTRL = io_ctrl; /* leave bypass */
 
     SLCR->LOCK = SLCR_LOCK_KEY;
+    return true;
 }
 
 /* TAG/DATA RAM latency regs (0x108/0x10C) are not in the CMSIS struct. */
@@ -231,7 +256,7 @@ static void sys_clock_init(void)
  *         disabled, invalidate by way, SLCR L2C_RAM = 0x202 (AR#54190),
  *         enable. Speculative prefetch (AUX_CNT[29:28]) stays off or the
  *         prefetcher kills the flash during QSPI reconfig (verified on
- *         this board); demand linefills make 100 MHz XIP reliable.
+ *         this board); demand linefills make 25 MHz XIP reliable.
  */
 static void l2_cache_enable(void)
 {
@@ -252,9 +277,9 @@ static void l2_cache_enable(void)
 
 /**
  * @brief  Activate the translation table, L2, MMU, L1 caches and branch
- *         prediction (L2 before MMU/L1: the QSPI reconfiguration window
- *         later runs fully covered by L1+L2). Caches were invalidated by
- *         reset_handler while still disabled.
+ *         prediction (L2 before MMU/L1). PLL/QSPI reconfig then runs from
+ *         OCM; after it returns, XIP is covered by L1+L2 at 25 MHz.
+ *         Caches were invalidated by reset_handler while still disabled.
  * @param  table Base of the table filled by mmu_init(); 16 KB aligned.
  */
 static void mmu_and_caches_enable(uint32_t *table)
@@ -272,8 +297,7 @@ static void mmu_and_caches_enable(uint32_t *table)
     MPCORE->SCU_INVALIDATE = 0xFFFFU;
     MPCORE->SCU_CONTROL |= 1UL;
 
-    /* L2 on before MMU/L1: the QSPI reconfiguration window later runs
-       fully covered by L1+L2. */
+    /* L2 on before MMU/L1: demand fills cover XIP after the OCM window. */
     l2_cache_enable();
 
     /* ACTLR[2]: L1 instruction prefetch. */
@@ -289,17 +313,35 @@ static void mmu_and_caches_enable(uint32_t *table)
 }
 
 /**
- * @brief  Bring up everything the XIP image needs: MMU/L2 first (caches
- *         cover the flash window), then reconfigure PLLs and QSPI from
- *         OCM. Any other order hangs the bus.
+ * @brief  Raise CPU clocks then reconfigure QSPI, without returning to
+ *         flash in between. After sys_clock_init, CPU_1x is 111 MHz while
+ *         QSPI is still the BootROM ref (ratio violated); qspi_reconfig
+ *         must run from this same OCM call. Skip QSPI if a PLL failed
+ *         (CPU stays/returns to bypass, BootROM linear still valid).
+ */
+static void sys_clock_and_qspi_reconfig(void)
+{
+    if (sys_clock_init())
+    {
+        qspi_reconfig();
+    }
+
+    /* Even the skip path may have touched ARM PLL; drain before Flash. */
+    __DSB();
+    __ISB();
+}
+
+/**
+ * @brief  Bring up everything the XIP image needs: MMU/L2 first (BootROM
+ *         QSPI still valid), then PLL+QSPI from one OCM call, then GIC
+ *         and tick. Any other order hangs the bus.
  */
 void soc_init(void)
 {
     mmu_init(mmu_table);
     mmu_and_caches_enable(mmu_table);
 
-    sys_clock_init();
-    qspi_reconfig();
+    sys_clock_and_qspi_reconfig();
 
     irq_init();
     tick_init();

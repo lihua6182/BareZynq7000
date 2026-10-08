@@ -2,7 +2,7 @@
  * @file zynq_usb.c
  * @brief USB0 (ChipIdea usb2) 控制器侧原语 + CherryUSB dcache 钩子。
  *        板级接线 (ULPI 引脚、USB3300 PHY 复位、时钟路由、GIC) 在
- *        board.c 的 usb_dc_low_level_init() 钩子里。
+ *        board_usb.c 的 usb_dc_low_level_init() 钩子里。
  */
 
 #include "zynq_usb.h"

@@ -9,6 +9,8 @@
 #include "board_fpga.h"
 #include "board_fpga_bitstream.h"
 #include "zynq_clock.h"
+#include "zynq_mio.h"
+#include "zynq_uart.h"
 
 /* Outcome of the last PL programming; query via board_pl_status(). */
 static enum pl_status pl_load_status = PL_NO_IMAGE;

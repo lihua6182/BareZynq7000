@@ -14,8 +14,7 @@ static volatile uint32_t tick_ms;
  * @brief  Interval interrupt handler: count one tick. The TTC interrupt
  *         register clears on read, dropping the level source before EOI.
  *
- * @note Must not live in .fast: the section starts at address 0, and
- *       irq_attach() rejects a NULL-looking pointer.
+ * @note Lives in XIP, not .fast (.fast is the OCM clock/QSPI window).
  */
 static void tick_irq_handler(void)
 {
