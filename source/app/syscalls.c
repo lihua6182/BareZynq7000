@@ -2,7 +2,7 @@
  * @file    syscalls.c
  * @brief   newlib syscall stubs (CubeMX template). _write/_read loop over
  *          the weak __io_putchar/__io_getchar; the strong versions in
- *          main.c bind the console to UART0.
+ *          board.c bind the console to the board UART.
  *          Copyright (c) 2020-2024 STMicroelectronics (template source).
  */
 

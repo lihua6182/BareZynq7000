@@ -3,10 +3,11 @@
  * @brief Application entry: board bring-up, then a CDC ACM bidirectional
  *        throughput benchmark over CherryUSB, driven by the Zynq-7000 USB0
  *        controller (ChipIdea usb2 2.20a) with the external USB3300 ULPI PHY
- *        on MIO 28..39 (USB3300 reset on MIO 47, active high per datasheet).
- *        The OUT endpoint is a sink (received bytes are counted, then
- * dropped); the IN endpoint is a source (a fixed pattern is streamed out under
- * DTR control). This is NOT a true loopback -- see cdc_throughput_init().
+ *        on MIO 28..39 (USB3300 reset on MIO 47, active high per datasheet;
+ *        wiring owned by board_usb.c's usb_dc_low_level_init()). The OUT
+ *        endpoint is a sink (received bytes are counted, then dropped); the
+ *        IN endpoint is a source (a fixed pattern is streamed out under DTR
+ *        control). This is NOT a true loopback -- see cdc_throughput_init().
  */
 
 #include <stdio.h>
@@ -15,20 +16,7 @@
 #include "usbd_cdc_acm.h"
 #include "usbd_core.h"
 #include "zynq_soc.h"
-#include "zynq_uart.h"
 #include "zynq_usb.h"
-
-/* newlib console binding: syscalls.c's _write/_read loop over these. */
-int __io_putchar(int ch)
-{
-    uart_putc(BOARD_UART, ch);
-    return ch;
-}
-
-int __io_getchar(void)
-{
-    return uart_getc(BOARD_UART);
-}
 
 /* ------------------------------------------------------------------ */
 /* CDC ACM throughput benchmark                                        */
@@ -177,7 +165,7 @@ static void usb_diag_print(void);
 
 /**
  * @brief  CDC ACM 双向吞吐测试初始化: 注册描述符/接口/端点后
- * usbd_initialize(), 底层 (ULPI 引脚、PHY、时钟、GIC) 由其钩子
+ * usbd_initialize(), 底层 (ULPI 引脚、PHY、时钟、GIC) 由 board 的钩子
  * usb_dc_low_level_init() 一并拉起。OUT 是 sink (只计数丢弃), IN 是 source
  * (固定图案), 并非真回环。
  * @note   依赖 tick_init() 已跑 (PHY 复位延迟用 tick_mdelay)。
@@ -189,7 +177,7 @@ static void cdc_throughput_init(void)
     usbd_add_interface(0, usbd_cdc_acm_init_intf(0, &intf1));
     usbd_add_endpoint(0, &cdc_out_ep);
     usbd_add_endpoint(0, &cdc_in_ep);
-    usbd_initialize(0, USB0_BASE, usbd_event_handler);
+    usbd_initialize(0, (uintptr_t)BOARD_USB, usbd_event_handler);
 
     /* 链路健康则静默; 只有 ULPI 无应答才展开诊断 (含极性搜索与重拉栈)。
      * 冷掉电后晶振/ULPI 时钟爬坡有离散性, PHY 偶尔要再等几十 ms 才应答

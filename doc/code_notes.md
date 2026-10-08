@@ -351,7 +351,7 @@ DMA_DEST_LEN`：写 DEST_LEN 才入队并启动。完成 ack 要同时写 `INT_S
 ## 其它
 
 - `syscalls.c`：CubeMX 模板；`_write/_read` 循环弱符号 `__io_putchar/__io_getchar`，
-  main.c 里强定义绑到 UART0。`_isatty=1` → newlib 行缓冲，`\n` 即刷出。
+  board.c 里强定义绑到板级控制台 UART0。`_isatty=1` → newlib 行缓冲，`\n` 即刷出。
   `_sbrk` 用链接脚本的 `__heap_start__/__heap_end__`，不按 CubeMX 的
   `_end/_estack/_Min_Stack_Size` 公式（与本布局不符，会撞异常栈）。
 - `zynq_boot_header.c`：结构体字段注释是 UG585 ch.6 原文对照，别精简；校验和由

@@ -1,6 +1,7 @@
 /**
  * @file board.c
- * @brief Board bring-up: PL configuration and PL fabric clocks.
+ * @brief Board bring-up: console binding, LED, PL configuration and PL
+ *        fabric clocks. USB0 的板级接线在 board_usb.c。
  */
 
 #include "board.h"
@@ -20,6 +21,20 @@ void board_console_init(void)
     mio_enable_pull_up(BOARD_UART_TX_MIO);
     mio_enable_pull_up(BOARD_UART_RX_MIO);
     uart_init(BOARD_UART, BOARD_UART_BAUD_HZ);
+}
+
+/* newlib 控制台绑定: syscalls.c 的 _write/_read 循环弱符号
+ * __io_putchar/__io_getchar (模板契约, 名字不可改), 这两个强版本把
+ * printf 系列绑到板级控制台串口。 */
+int __io_putchar(int ch)
+{
+    uart_putc(BOARD_UART, ch);
+    return ch;
+}
+
+int __io_getchar(void)
+{
+    return uart_getc(BOARD_UART);
 }
 
 void board_led_init(void)
