@@ -36,7 +36,7 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
               board_fpga（PL 配置 + PL 控制面，手写）、board_fpga_bitstream（PL 镜像，生成物）
   driver/     PS 外设：zynq_mio（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart、
               zynq_usb（USB0 控制器原语 + dcache 钩子，模块词 usb_）、zynq_dma（PL330 微码搬运）、
-              zynq_cache（L1/PL310 维护）；
+              zynq_cache（L1/PL310 维护）、zynq_spi（Cadence SPI 主机）、zynq_i2c（Cadence I2C 主机）；
               driver/pl/：PL IP（非 PS）zynq_ppc（proto_coproc 访问）、zynq_swd（SWD 访问层）
   soc/        zynq_startup.s、zynq_soc（MMU/L2/时钟/QSPI 启动）、zynq_clock（时钟树）、
               zynq_irq（GIC）、zynq_tick（TTC0）、zynq_boot_header、寄存器头 + CMSIS Core(A) 子集
@@ -76,7 +76,8 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
   vendor 副本与上游唯一差异：`USBMODE.SLOM` 按 Zynq 极性写 1（=关闭 setup lockout，配 tripwire）。
   测速模式（配合 `tools/test_cdc_speed.py`，DTR 门控两相）：DTR=0 下行相——收完即丢、
   立即续挂 4096B 读（排水）；DTR=1 上行相——主循环轮询续写 4096B 压满 IN 管道。
-  数据缓冲与 QH/QTD 链表都在 `.no_cache_ram`（OCM 高 64KB，DMA 可达，免 cache 维护），
+  CDC 数据缓冲在 `.bss`（低 OCM，WB 可缓存，由 `usb_dcache_*` 钩子做 L1+L2 维护）；
+  QH/QTD 链表、`g_usbd_core` 和 DCD 数据在 `.no_cache_ram`（OCM 高 64KB，DMA 可达，免 cache 维护），
   UART 每 5s 打印 rx/tx 计数。实测（Win10 usbser，高速枚举）：
   **双向 ~30-31 MB/s**（4096B 缓冲；2048B 时 ~28-30 MB/s）。
 
@@ -132,6 +133,8 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   |---|---|---|
   | `mio_` | `zynq_mio.h` | PS 引脚域：MIO pad/pinmux（SLCR，ch.6，pad 0..53）+ GPIO 控制器（ch.14，pin 0..117 含 EMIO），一个模块两半（pin n == pad n, n<54） |
   | `uart_` | `zynq_uart.h` | Cadence UART |
+  | `spi_` | `zynq_spi.h` | Cadence SPI 主机（ch.17，SPI0/1；手动片选、轮询块传输；参考时钟固定 IO PLL/5 = 200MHz，SCLK = ref/4..ref/256） |
+  | `i2c_` | `zynq_i2c.h` | Cadence I2C 主机（ch.20，I2C0/1；7 位地址、轮询、repeated start 组合传输，≤400kHz） |
   | `usb_` | `zynq_usb.h` | USB0 控制器原语（ULPI viewport 寄存器读）+ CherryUSB dcache 钩子；板级接线在 `board_usb.c` |
   | `dma_` | `zynq_dma.h` | PS DMAC（PL330）微码式内存搬运，轮询完成 |
   | `cache_` | `zynq_cache.h` | L1/PL310 缓存维护（DMA 一致性：中央互连双层 / ACP 单层）|

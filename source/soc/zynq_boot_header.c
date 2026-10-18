@@ -37,6 +37,8 @@ struct boot_header
     uint32_t fsbl_user_defined[8];          // 0x8A0 unused by BootROM; keeps sizeof() == 0x8C0
 };
 
+_Static_assert(sizeof(struct boot_header) == 0x8C0, "boot header must occupy the full 0x8C0 BootROM header window");
+
 #if defined(__GNUC__)
 const struct boot_header boot_header __attribute__((section(".boot_header")));
 #else

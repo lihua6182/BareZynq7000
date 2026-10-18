@@ -21,6 +21,10 @@ _vectors:
         .global reset_handler
         .type   reset_handler, function
 reset_handler:
+        // GIC is not up yet; mask IRQ/FIQ so an interrupt during the
+        // QSPI reconfiguration window cannot fetch from dead flash.
+        cpsid   if
+
         // Disable caches/MMU/BP in case an earlier run left them on;
         // makes a debugger warm reset behave like a cold one.
         mrc     p15, 0, r0, c1, c0, 0       /* CP15 System Control Register */
@@ -31,12 +35,15 @@ reset_handler:
         bic     r0, r0, #(0x1 << 13)        /* V: low vector table           */
         bic     r0, r0, #(0x1 << 28)        /* TRE: disable TEX remap        */
         mcr     p15, 0, r0, c1, c0, 0
+        dsb     sy
+        isb     sy
 
         // L2 off while the MMU is off; re-enabled (prefetch off) by
         // mmu_and_caches_enable(). reg1_control = L2C + 0x100, bit 0.
         ldr     r0, =0xF8F02100
         mov     r1, #0
         str     r1, [r0]
+        dsb     sy
 
         // Set the vector base address register to our vector table(VBAR)
         ldr     r0, =_vectors

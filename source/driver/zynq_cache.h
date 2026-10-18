@@ -5,11 +5,12 @@
  * driver zynq_cache: Cortex-A9 L1 + PL310 L2 缓存维护（by-MVA / by-PA），
  * 给 DMA 缓冲一致性用。Zynq-7000 上有两类 DMA 主设备，维护深度不同：
  *
- *   中央互连（USB/ENET/SD/DMA 控制器）：不嗅探 PL310，数据必须真正落到
- *   OCM/DDR —— cache_clean / cache_invalidate（L1+L2 双层）
+ *   中央互连（USB/ENET/SD/DMA 控制器、DevC/PCAP）：不嗅探 PL310，数据
+ *   必须真正落到 OCM/DDR —— cache_clean / cache_invalidate（L1+L2 双层）。
+ *   DevC/PCAP 是 PS AXI 互连主设备，不是 ACP 主设备（UG585 ch.5/ch.6）。
  *
- *   ACP 端口（DevC/PCAP）：硬件在 SCU/ACP 处与 L2 一致，只需把 CPU 侧
- *   L1 行推下去 —— cache_clean_acp（L1 单层）
+ *   ACP 端口（PL 经 S_AXI_ACP）：硬件在 SCU/ACP 处与 L2 一致，只需把 CPU
+ *   侧 L1 行推下去 —— cache_clean_acp（L1 单层）
  *
  * 顺序约束（ARMv7-A）：L1 维护指令完成 ≠ 数据已落到 L2；L2 的 by-PA
  * 维护必须在 L1 循环全部结束 + DSB 之后才开始，否则 L2 清到旧行、DMA
@@ -29,7 +30,8 @@ void cache_clean(const void *addr, size_t size);
  * 写入的内存。丢弃语义，DMA 专用缓冲。 */
 void cache_invalidate(const void *addr, size_t size);
 
-/* CPU -> DMA（ACP 主设备，如 DevC/PCAP）：只清 L1，L2 一致性由硬件保证。 */
+/* CPU -> DMA（真正的 ACP 主设备，即 PL 经 S_AXI_ACP）：只清 L1，L2 一致性
+ * 由硬件保证。DevC/PCAP 不是 ACP 主设备，用 cache_clean()。 */
 void cache_clean_acp(const void *addr, size_t size);
 
 #endif /* ZYNQ_CACHE_H */

@@ -1320,6 +1320,16 @@ typedef struct
 #define QSPI_DUMMY_TX_DATA (0xFFFFFFFFUL) /*  */
 
 /*****************  Bit definitions for I2C  *****************/
+#define I2C_CR_RD_WR_Pos    (0U)
+#define I2C_CR_RD_WR_Msk    (0x1UL) /* Direction of transfer: 1 = read */
+#define I2C_CR_MS_Pos       (1U)
+#define I2C_CR_MS_Msk       (0x2UL) /* Interface mode: 1 = master */
+#define I2C_CR_NEA_Pos      (2U)
+#define I2C_CR_NEA_Msk      (0x4UL) /* Addressing: 1 = normal 7-bit */
+#define I2C_CR_ACKEN_Pos    (3U)
+#define I2C_CR_ACKEN_Msk    (0x8UL) /* ACK transmit enable */
+#define I2C_CR_HOLD_Pos     (4U)
+#define I2C_CR_HOLD_Msk     (0x10UL) /* Hold bus (stretch SCL) */
 #define I2C_CR_SLVMON_Pos   (5U)
 #define I2C_CR_SLVMON_Msk   (0x20UL) /* Slave monitor mode */
 #define I2C_CR_CLR_FIFO_Pos (6U)
@@ -1349,15 +1359,29 @@ typedef struct
 #define I2C_DATA_MASK_Pos   (0U)
 #define I2C_DATA_MASK_Msk   (0xFFUL) /* IIC Data Mask */
 
+#define I2C_IXR_COMP_Pos     (0U)
+#define I2C_IXR_COMP_Msk     (0x1UL)   /* Transfer Complete Interrupt mask */
 #define I2C_IXR_DATA_Pos     (1U)
-#define I2C_IXR_DATA_Msk     (0x2UL) /* Data Interrupt mask */
+#define I2C_IXR_DATA_Msk     (0x2UL)   /* Data Interrupt mask */
 #define I2C_IXR_NACK_Pos     (2U)
 #define I2C_IXR_NACK_Msk     (0x4UL)   /* NACK Interrupt mask */
+#define I2C_IXR_TO_Pos       (3U)
+#define I2C_IXR_TO_Msk       (0x8UL)   /* Transfer Time Out Interrupt mask */
+#define I2C_IXR_SLV_RDY_Pos  (4U)
+#define I2C_IXR_SLV_RDY_Msk  (0x10UL)  /* Monitored Slave Ready Interrupt mask */
+#define I2C_IXR_RX_OVR_Pos   (5U)
+#define I2C_IXR_RX_OVR_Msk   (0x20UL)  /* Receive Overflow Interrupt mask */
+#define I2C_IXR_TX_OVR_Pos   (6U)
+#define I2C_IXR_TX_OVR_Msk   (0x40UL)  /* Transmit Overflow Interrupt mask */
+#define I2C_IXR_RX_UNF_Pos   (7U)
+#define I2C_IXR_RX_UNF_Msk   (0x80UL)  /* FIFO Receive Underflow Interrupt mask */
+#define I2C_IXR_ARB_LOST_Pos (9U)
+#define I2C_IXR_ARB_LOST_Msk (0x200UL) /* Arbitration Lost Interrupt mask */
 #define I2C_IXR_ALL_INTR_Msk (0x2FFUL) /* All ISR Mask (non-contiguous) */
 #define I2C_IXR_DEFAULT_Msk  (0x2FFUL) /* Default ISR Mask (non-contiguous) */
 
 #define I2C_TRANS_SIZE_Pos (0U)
-#define I2C_TRANS_SIZE_Msk (0x3FUL) /* IIC Transfer Size Mask */
+#define I2C_TRANS_SIZE_Msk (0xFFUL) /* IIC Transfer Size Mask (7:0, UG585; Xilinx BSP 旧值 0x3F) */
 
 #define I2C_FIFO_DEPTH (0x10UL) /* Number of bytes in the FIFO */
 
@@ -1406,6 +1430,7 @@ typedef struct
 #define SPI_IXR_RXFULL_Msk   (0x20UL) /* Rx FIFO Full */
 #define SPI_IXR_TXUF_Pos     (6U)
 #define SPI_IXR_TXUF_Msk     (0x40UL) /* Tx FIFO Underflow */
+#define SPI_IXR_MASK_Msk     (0x7FUL) /* Valid bit mask */
 
 #define SPI_ER_ENABLE_Pos (0U)
 #define SPI_ER_ENABLE_Msk (0x1UL) /* SPI Enable Bit Mask */

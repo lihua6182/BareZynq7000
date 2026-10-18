@@ -52,7 +52,10 @@
 #define SYNC_SCAN_BYTES (128UL)
 
 /* Staging buffer between the decoder and the DMA: 64-byte aligned
-   (bursts never straddle a 4 KB page), cacheable OCM (clean before DMA). */
+   (64-byte bursts never straddle a 4 KB page), cacheable low OCM.
+   DevC is a central-interconnect master, not an ACP master: clean
+   L1+L2 with cache_clean() before each DMA. The L2 clean is a no-op
+   for OCM, but keeps the path correct if this buffer ever moves. */
 #define DMA_STAGE_BYTES (4096UL)
 static uint32_t dma_stage_buf[DMA_STAGE_BYTES / 4UL] __attribute__((aligned(64)));
 
@@ -507,7 +510,7 @@ static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header
 
             if (words != 0UL)
             {
-                cache_clean_acp(stage, words * 4UL);
+                cache_clean(stage, words * 4UL);
                 crc = crc32_update(crc, stage, words * 4UL);
                 st = pcap_send_block(dma_stage_buf, words);
                 if (st != PL_OK)
@@ -583,7 +586,7 @@ static enum pl_status zblz_flush(struct zblz_sink *s)
         }
         s->sync_checked = true;
     }
-    cache_clean_acp(s->stage, s->filled);
+    cache_clean(s->stage, s->filled);
     s->crc = crc32_update(s->crc, s->stage, s->filled);
     st = pcap_send_block(s->stage, s->filled / 4UL);
     if (st == PL_OK)

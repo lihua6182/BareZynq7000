@@ -34,6 +34,8 @@ static uint32_t mmu_table[MMU_TABLE_ENTRIES] __attribute__((aligned(16384), sect
    finishes). Call both only via sys_clock_and_qspi_reconfig so the
    CPU never returns to flash in that window. */
 static void qspi_reconfig(void) __attribute__((section(".fast"), noinline));
+static void sys_clock_restore(uint32_t arm_ctrl, uint32_t arm_cfg, uint32_t arm_clk, uint32_t io_ctrl, uint32_t io_cfg,
+                              bool io_changed) __attribute__((section(".fast"), noinline));
 static bool sys_clock_init(void) __attribute__((section(".fast"), noinline));
 static void sys_clock_and_qspi_reconfig(void) __attribute__((section(".fast"), noinline));
 
@@ -164,27 +166,105 @@ static void qspi_reconfig(void)
 }
 
 /**
+ * @brief  Put the BootROM clock tree back after a PLL lock failure.
+ *
+ * Runs from OCM (.fast) while the QSPI may still be on the pre-change
+ * source. A PLL that was not in bypass originally is re-locked behind
+ * its bypass bit, so the CPU never runs on an unlocked PLL. Best
+ * effort: a PLL that still refuses to lock is left in bypass.
+ * @param arm_ctrl   Original ARM_PLL_CTRL.
+ * @param arm_cfg    Original ARM_PLL_CFG.
+ * @param arm_clk    Original ARM_CLK_CTRL.
+ * @param io_ctrl    Original IO_PLL_CTRL.
+ * @param io_cfg     Original IO_PLL_CFG.
+ * @param io_changed True when the IO PLL was reprogrammed before the failure.
+ */
+static void sys_clock_restore(uint32_t arm_ctrl, uint32_t arm_cfg, uint32_t arm_clk, uint32_t io_ctrl, uint32_t io_cfg,
+                              bool io_changed)
+{
+    uint32_t retry;
+
+    /* CPU back on the original mux/divider. The ARM PLL may still be
+       locked here (IO-failure path); the branch below forces bypass
+       before reprogramming it. */
+    SLCR->ARM_CLK_CTRL = arm_clk;
+
+    if ((arm_ctrl & (1U << 4)) == 0U)
+    {
+        SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4);
+        SLCR->ARM_PLL_CFG = arm_cfg;
+        for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
+        {
+            if ((SLCR->PLL_STATUS & 1U) != 0U)
+            {
+                break;
+            }
+        }
+        SLCR->ARM_PLL_CTRL = (retry == PLL_LOCK_POLL_LIMIT) ? (arm_ctrl | (1U << 4)) : arm_ctrl;
+    }
+    else
+    {
+        SLCR->ARM_PLL_CTRL = arm_ctrl;
+        SLCR->ARM_PLL_CFG = arm_cfg;
+    }
+
+    if (io_changed)
+    {
+        if ((io_ctrl & (1U << 4)) == 0U)
+        {
+            SLCR->IO_PLL_CTRL = io_ctrl | (1U << 4);
+            SLCR->IO_PLL_CFG = io_cfg;
+            for (retry = 0U; retry < PLL_LOCK_POLL_LIMIT; retry++)
+            {
+                if ((SLCR->PLL_STATUS & (1U << 2)) != 0U)
+                {
+                    break;
+                }
+            }
+            SLCR->IO_PLL_CTRL = (retry == PLL_LOCK_POLL_LIMIT) ? (io_ctrl | (1U << 4)) : io_ctrl;
+        }
+        else
+        {
+            SLCR->IO_PLL_CTRL = io_ctrl;
+            SLCR->IO_PLL_CFG = io_cfg;
+        }
+    }
+}
+
+/**
  * @brief  Bring up the ARM and IO PLLs and the CPU divider: ARM PLL FDIV
  *         40 -> CPU /2 = 667 MHz, IO PLL FDIV 30 -> QSPI ref /5 = 200 MHz
  *         (Table 25-3, 6:2:1). Per PLL: program, force bypass, pulse
- *         reset, wait lock, leave bypass; a PLL that never locks stays in
- *         bypass and returns early. DDR PLL untouched.
+ *         reset, wait lock, leave bypass. DDR PLL untouched.
  *
- * @note Runs from OCM (.fast) during the reconfiguration window.
- * @return true if ARM and IO PLLs locked (QSPI may switch to IO PLL/5);
- *         false if a PLL stayed in bypass (keep BootROM QSPI).
+ * @note Runs from OCM (.fast) during the reconfiguration window. On a
+ *       lock failure the pre-change clock tree is restored (both PLLs
+ *       and the CPU divider), so the BootROM QSPI source and ratio stay
+ *       valid.
+ * @return true if both PLLs locked (QSPI may switch to IO PLL/5); false
+ *         after a failure and restore (skip qspi_reconfig).
  */
 static bool sys_clock_init(void)
 {
+    uint32_t arm_ctrl_orig;
+    uint32_t arm_cfg_orig;
+    uint32_t arm_clk_orig;
+    uint32_t io_ctrl_orig;
+    uint32_t io_cfg_orig;
     uint32_t arm_ctrl;
     uint32_t io_ctrl;
     uint32_t retry;
 
     SLCR->UNLOCK = SLCR_UNLOCK_KEY;
 
+    arm_ctrl_orig = SLCR->ARM_PLL_CTRL;
+    arm_cfg_orig = SLCR->ARM_PLL_CFG;
+    arm_clk_orig = SLCR->ARM_CLK_CTRL;
+    io_ctrl_orig = SLCR->IO_PLL_CTRL;
+    io_cfg_orig = SLCR->IO_PLL_CFG;
+
     /* ARM PLL FDIV 40, CFG 250/2/2 (Table 25-6). */
-    arm_ctrl = SLCR->ARM_PLL_CTRL;
-    arm_ctrl = (arm_ctrl & ~(0x7FU << 12)) | (40UL << 12);
+    arm_ctrl = (arm_ctrl_orig & ~(0x7FU << 12)) | (40UL << 12);
     SLCR->ARM_PLL_CTRL = arm_ctrl;
 
     SLCR->ARM_PLL_CFG = ((uint32_t)250UL << 12) | ((uint32_t)2UL << 8) | ((uint32_t)2UL << 4);
@@ -202,7 +282,8 @@ static bool sys_clock_init(void)
     }
     if (retry == PLL_LOCK_POLL_LIMIT)
     {
-        /* ARM PLL failed to lock: keep bypass clocks, keep BootROM QSPI. */
+        /* ARM PLL failed: restore the BootROM ARM/CPU state, skip QSPI. */
+        sys_clock_restore(arm_ctrl_orig, arm_cfg_orig, arm_clk_orig, io_ctrl_orig, io_cfg_orig, false);
         SLCR->LOCK = SLCR_LOCK_KEY;
         return false;
     }
@@ -213,8 +294,7 @@ static bool sys_clock_init(void)
     SLCR->ARM_CLK_CTRL = 0x1F000200U;
 
     /* IO PLL FDIV 30 -> 1000 MHz, CFG 325/2/12 (Table 25-6). */
-    io_ctrl = SLCR->IO_PLL_CTRL;
-    io_ctrl = (io_ctrl & ~(0x7FU << 12)) | (30UL << 12);
+    io_ctrl = (io_ctrl_orig & ~(0x7FU << 12)) | (30UL << 12);
     SLCR->IO_PLL_CTRL = io_ctrl;
 
     SLCR->IO_PLL_CFG = (325UL << 12) | /* LOCK_CNT = 325 */
@@ -234,9 +314,9 @@ static bool sys_clock_init(void)
     }
     if (retry == PLL_LOCK_POLL_LIMIT)
     {
-        /* IO PLL failed: put ARM back in bypass so CPU_1x drops below
-           the BootROM QSPI ref, then skip qspi_reconfig. */
-        SLCR->ARM_PLL_CTRL = arm_ctrl | (1U << 4);
+        /* IO PLL failed: put the ARM PLL/CPU divider back, then skip
+           qspi_reconfig. The BootROM QSPI source is restored with it. */
+        sys_clock_restore(arm_ctrl_orig, arm_cfg_orig, arm_clk_orig, io_ctrl_orig, io_cfg_orig, true);
         SLCR->LOCK = SLCR_LOCK_KEY;
         return false;
     }
@@ -316,8 +396,9 @@ static void mmu_and_caches_enable(uint32_t *table)
  * @brief  Raise CPU clocks then reconfigure QSPI, without returning to
  *         flash in between. After sys_clock_init, CPU_1x is 111 MHz while
  *         QSPI is still the BootROM ref (ratio violated); qspi_reconfig
- *         must run from this same OCM call. Skip QSPI if a PLL failed
- *         (CPU stays/returns to bypass, BootROM linear still valid).
+ *         must run from this same OCM call. A PLL failure restores the
+ *         pre-change clock tree, so the skip path returns to the BootROM
+ *         QSPI source instead of a violated ratio.
  */
 static void sys_clock_and_qspi_reconfig(void)
 {
@@ -326,7 +407,7 @@ static void sys_clock_and_qspi_reconfig(void)
         qspi_reconfig();
     }
 
-    /* Even the skip path may have touched ARM PLL; drain before Flash. */
+    /* The skip path restored the PLLs; drain before Flash. */
     __DSB();
     __ISB();
 }

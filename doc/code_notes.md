@@ -57,6 +57,68 @@ irq 常量对标内核 `IRQ_TYPE_*`；功能选择宏是 `MIO<pad>_<功能>` 形
 
 ---
 
+## zynq_spi（Cadence SPI 主机）
+
+（2026-10-11 入树；与 UG585 ch.17 原文、Vivado 2025.2 的 embeddedsw 参考驱动
+`spips_v3_13` 轮询实现交叉核对。）
+
+- 只做主模式 + 手动片选（SSFORCE=1、Man_start_en=0、SSDECEN=0）。ch.17 表 17-1 里
+  "手动片选 + 自动启动"是通用推荐组合：软件控制 SS 起落，写入 TX FIFO 即自动移位；
+  一次从设备会话 = `spi_select()` → N×`spi_transfer()` → `spi_deselect()`，期间
+  SS 不松、时钟不换。单主机系统关掉总线竞争检测（Modefail_gen_en，复位值 1），
+  避免 SS 输入电位的误报。
+- 参考时钟：`SPI_CLK_CTRL` 由 SPI0/1 共享，复位值 IO PLL/63 ≈ 15.9MHz **低于**
+  CPU_1x=111MHz，违反 ch.17"SPI_Ref_Clk 必须高于 CPU_1x"。驱动固定为
+  IO PLL/5 = 200MHz（与 QSPI 同一档），SCLK = ref/2^(baud_div+1)，
+  baud_div 1..7 → 50/25/12.5/6.25/3.125/1.5625/0.78125MHz。baud_div=0（/2）
+  ch.17 明确"not supported"；MIO 走线的 SCLK 上限 50MHz。`spi_set_sclk()` 用运行期
+  读回的 ref 算档，选"不超过目标"的最高档（与 UART 求最近档不同：SPI 宁可慢不许超）。
+- 传输节奏按 FIFO 水位 1（复位默认）：TXOW=1 ⇔ TX FIFO 空、RXNEMPTY=1 ⇔ RX FIFO
+  非空。整块（≤128B = FIFO 深度）填 TX → 等 TXOW → 逐字节按 RXNEMPTY 收 RX，
+  块间自续；块大小 ≤ RX FIFO 深度，接收永不溢出。若把水位调大，`spi_tx_empty()` /
+  `spi_rx_ready()` 语义随水位漂移，`spi_transfer()` 的块节奏即被破坏。
+- CR 没有 FIFO 复位位（ch.17 附录 7:6 保留），清 FIFO 只能走 SLCR `SPI_RST_CTRL`：
+  SPI0 = REF(bit2)|CPU1x(bit0)，SPI1 = bit3|bit1，两个域必须一起脉冲（Table 17-3）。
+- 中断线 SPI0=58 / SPI1=81（ch.17 系统框图）；本驱动全轮询，不占 GIC，将来做
+  中断模式再加。
+- 验证钩子（未实施）：SLCR `MIO_LOOPBACK`(0xF8000804) bit0 SPI0_LOOP_SPI1 把 SPI0
+  输出内部接到 SPI1 输入；真正回环自测需对端工作在从模式，本驱动目前只做主机。
+
+---
+
+## zynq_i2c（Cadence I2C 主机）
+
+（2026-10-11 入树；与 UG585 ch.20 原文、Vivado 2025.2 的 `iicps_v3_22` 轮询实现
+交叉核对。）
+
+- 只做主模式 + 7 位地址；SCL = CPU_1x/(22·(div_a+1)·(div_b+1))（ch.20 公式），
+  div_a 0..3、div_b 0..63。`i2c_set_scl()` 扫全空间取"不超过目标"的最高档；目标
+  > 400kHz 直接拒绝（ch.20 规格上限）。111MHz CPU_1x 下档位覆盖 ~19.7kHz..5.05MHz：
+  100kHz 落 99.0kHz、400kHz 落 388.5kHz（与 TRM 表 20-1 示例同族）。
+- 写：先填 FIFO 再写 ADDR（写 ADDR 即启动，TRM 写流程）。>16B 时置 HOLD——FIFO
+  排空后总线挂在暂停态不发 STOP，按 SR.TXDV=0（排空）节奏整块续填（对标 Xilinx
+  xiicps polled 发送：续填只用 DATA 写，硬件自动续传）。全部发完后等 COMP、
+  清 HOLD 让硬件发 STOP，再等 SR.BA 落。COMP 若被中间暂停提前置位（理论上限），
+  由末尾的 BA 等待兜底。
+- 读：TRANS_SIZE 必须先于 ADDR（Xilinx CR996440 同款定序）；>16B 置 HOLD 防 FIFO
+  溢出，剩 ≤14（FIFO 深度-2）字节时提前释放 HOLD，末尾由控制器自动 NACK+STOP；
+  收完等 COMP 再等 BA。长度上限 255（TRANS_SIZE 8 位）。`zynq_soc.h` 的
+  `I2C_TRANS_SIZE_Msk` 原为 Xilinx BSP 旧值 0x3F，已按 UG585 附录（7:0）
+  修正为 0xFF；驱动写长度仍按 8 位直接进寄存器。
+- write_read（repeated start）：第一段写全程 HOLD，COMP 即"写完且总线挂在暂停态"；
+  两段之间清 ISR（丢掉第一段的 COMP），第二段换 RW=1 + TRANS_SIZE 后重写 ADDR
+  产生 repeated start，收尾与读相同。写段限 16B：单次 FIFO 排空即可确定性等到
+  COMP，避免 >16B 续填时理论上"中间暂停 COMP"污染两段接驳点。
+- 失败路径：任一错误位（NACK/ARB_LOST/RX_OVR/TX_OVR/RX_UNF/TO）→ 清 HOLD +
+  CLR_FIFO、返回 -1，ISR 现场保留，调用方用 `i2c_irq_status()` 判因；下一笔传输
+  开头自行清。TIME_OUT 给 0xFF（最大 255 SCL 周期），轮询另设 `I2C_POLL_LIMIT`
+  强序循环上限，两者互为兜底。
+- 中断线 I2C0=57 / I2C1=80（ch.20 系统框图）；轮询驱动不占 GIC。
+- 验证钩子（未实施）：`MIO_LOOPBACK` bit3 I2C0_LOOP_I2C1 可互连两个控制器；
+  对端要做从模式，本驱动目前只做主机。
+
+---
+
 ## zynq_clock（时钟树）
 
 全部频率运行时从 SLCR 读回重算（`clock_freqs_get`），全工程唯一硬编码频率是晶振
@@ -78,7 +140,8 @@ irq 常量对标内核 `IRQ_TYPE_*`；功能选择宏是 `MIO<pad>_<功能>` 形
   banked，无需 target。
 - 入口 `irq_handler`：IAR/EOIR 成对 mandatory，否则 SPSR 恢复后异常立刻重入；
   spurious ID 1023 越界检查失败、不 EOIR（IHI0048）。
-- XIP 相关：分发代码在 flash 里，启动期 QSPI 重配完成前 IRQ 保持屏蔽；运行期要退出
+- XIP 相关：分发代码在 flash 里；`reset_handler` 入口 `cpsid if` 显式屏蔽
+  IRQ/FIQ，直到 `irq_init()` 才解除 IRQ（FIQ 保持屏蔽）。运行期要退出
   QSPI linear 模式的代码必须先 `__disable_irq()`，否则取指停摆。
 - `target("general-regs-only")` + pragma 压 `-Wattributes`：GCC 的 `interrupt` 属性不保存
   VFP/NEON 寄存器，该属性只挡编译期警告不改变代码生成（详见 memory 的长考据）。
@@ -259,8 +322,10 @@ QSPI ref = IO PLL/5 = 200 MHz（> CPU_1x=111MHz，ch.12 比值约束）、SCLK =
 直接采样实测可读但超 FQSPICLK2 规格，不采用）。退出 linear 模式前必须排空 Rx 与 Tx FIFO（ch.12），`LQSPI_RST_CTRL` 脉冲会清两个复位域。
 复位后还原的是保存的 BootROM `LQSPI_CR`（读指令 0x6B + LINEAR），不是复位值
 `0x8000016B`。`SPI_EN` 之后 `__DSB(); __ISB();` 再回 flash（控制器 SO、XIP 窗 WB）。
-PLL 失锁则跳过 `qspi_reconfig`：ARM 失锁保持 bypass；IO 失锁把 ARM 拉回 bypass，
-避免 CPU_1x=111MHz 仍走 BootROM 33MHz ref。
+PLL 失锁则跳过 `qspi_reconfig`：`sys_clock_restore()` 把 ARM PLL、IO PLL 和
+ARM_CLK_CTRL 恢复成改动前的 BootROM 状态（原本未 bypass 的 PLL 先在 bypass 下
+重锁再解除），CPU/QSPI 回到 BootROM 的合法时钟比；不再用"把 ARM 拉回 bypass"
+的旧回退（那会把 QSPI ref 一起降到 PS_CLK/40）。
 
 ---
 
@@ -268,12 +333,14 @@ PLL 失锁则跳过 `qspi_reconfig`：ARM 失锁保持 bypass；IO 失锁把 ARM
 
 ### 两个 DMA 域，维护深度不同
 
-- **中央互连主设备**（USB/ENET/SD/DMA 控制器）：不嗅探 PL310，CPU 写的数据必须
-  用 `cache_clean/flush` 双层清写真正落到 OCM/DDR；读回方向 `cache_invalidate`
-  双层丢弃（丢弃语义，只给 DMA 专用缓冲）。
-- **ACP 主设备**（DevC/PCAP）：硬件在 SCU/ACP 处与 L2 一致，`cache_clean_acp`
-  只清 L1 即可——board_fpga 的 staging buffer 一直就是这个语义（原
-  clean_l1_dcache）。
+- **中央互连主设备**（USB/ENET/SD/DMA 控制器、DevC/PCAP）：不嗅探 PL310，
+  CPU 写的数据必须用 `cache_clean/flush` 双层清写真正落到 OCM/DDR；读回方向
+  `cache_invalidate` 双层丢弃（丢弃语义，只给 DMA 专用缓冲）。DevC/PCAP 是
+  PS AXI 互连主设备，不是 ACP 主设备（UG585 ch.5/ch.6）；board_fpga 的
+  staging buffer 在 OCM 上，L2 本来就不缓存 OCM，但按中央主设备的契约统一
+  走 `cache_clean()`，避免以后把 buffer 移出 OCM 时静默读到旧数据。
+- **ACP 主设备**（PL 经 S_AXI_ACP）：硬件在 SCU/ACP 处与 L2 一致，
+  `cache_clean_acp` 只清 L1 即可。
 
 ### L1→L2 的顺序坑（GLM5.3-flash 踩过）
 
