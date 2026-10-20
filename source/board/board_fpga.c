@@ -35,15 +35,14 @@
 
 /* Packed images (tools/convert_bitstream.py); the magic doubles as the
  * load-path selector - bitgen images start with 0xFFFFFFFF padding.
- * ZBLZ (default) and ZBSP share the 16-byte LE header layout:
+ * ZBLZ uses the 16-byte LE header layout:
  *
- *   0x00 magic      "ZBLZ" (raw LZMA1 payload) or "ZBSP" (RLE payload)
+ *   0x00 magic      "ZBLZ" (raw LZMA1 payload)
  *   0x04 raw_len    uncompressed image length, % 4 == 0
  *   0x08 packed_len payload length
  *   0x0C crc32      CRC-32 (EDB88320) over the raw image
  */
-#define ZBLZ_MAGIC   (0x5A4C425AUL) /* LZMA payload */
-#define ZBSP_MAGIC   (0x5A425350UL) /* RLE payload (fallback) */
+#define ZBLZ_MAGIC   (0x5A4C425AUL)
 #define ZB_HDR_BYTES (16UL)
 #define CRC32_POLY   (0xEDB88320UL)
 
@@ -386,16 +385,14 @@ static enum pl_status load_raw_bitstream(const uint8_t *img, uint32_t len)
 }
 
 /**
- * @brief  Parse and validate a packed-image header (ZBLZ or ZBSP - one
- *         layout); pure memory work, rejects a malformed blob before
- *         any hardware is touched.
+ * @brief  Parse and validate a ZBLZ header; pure memory work, rejects a
+ *         malformed blob before any hardware is touched.
  * @param  img   Start of the packed image.
  * @param  len   Length of the whole image in bytes.
- * @param  magic The magic the image must carry.
  * @param  hdr   Out: the decoded header.
  * @return PL_OK, or PL_ERR_HDR.
  */
-static enum pl_status parse_zb_header(const uint8_t *img, uint32_t len, uint32_t magic, struct zb_header *hdr)
+static enum pl_status parse_zb_header(const uint8_t *img, uint32_t len, struct zb_header *hdr)
 {
     struct zb_header parsed;
 
@@ -404,7 +401,7 @@ static enum pl_status parse_zb_header(const uint8_t *img, uint32_t len, uint32_t
         return PL_ERR_HDR;
     }
     memcpy(&parsed, img, sizeof(parsed));
-    if (parsed.magic != magic)
+    if (parsed.magic != ZBLZ_MAGIC)
     {
         return PL_ERR_HDR;
     }
@@ -423,138 +420,9 @@ static enum pl_status parse_zb_header(const uint8_t *img, uint32_t len, uint32_t
     return PL_OK;
 }
 
-/**
- * @brief  RLE-decode a ZBSP image and stream it to the PCAP, one DMA
- *         per chunk. The DMA moves whole words (a < 4 remainder carries
- *         to the next round) and needs a 64-byte aligned source.
- *         Every marker read, the decoded total and the CRC are checked.
- * @param  img Start of the packed image (header included).
- * @param  hdr Header validated by parse_zb_header().
- * @return PL_OK, or the reason it failed.
- */
-static enum pl_status load_zbsp_image(const uint8_t *img, const struct zb_header *hdr)
-{
-    const uint8_t *payload = img + ZB_HDR_BYTES;
-    const uint8_t *payload_end = payload + hdr->packed_len;
-    uint8_t *stage = (uint8_t *)dma_stage_buf;
-    uint32_t filled = 0UL; /* bytes in the staging buffer (incl. <4 carry) */
-    uint32_t decoded = 0UL;
-    uint32_t crc = 0xFFFFFFFFUL;
-    bool sync_checked = false;
-    bool stream_done = false;
-    enum pl_status st;
-
-    crc32_table_init();
-    for (;;)
-    {
-        /* Every marker emits at most 128 bytes: "128 free" always
-           makes progress. */
-        while ((!stream_done) && ((filled + 128UL) <= DMA_STAGE_BYTES))
-        {
-            uint32_t marker = *payload++;
-            if (marker == 0UL)
-            { /* end marker */
-                stream_done = true;
-            }
-            else if (marker <= 0x3FUL)
-            { /* literal run */
-                if ((payload + marker) > payload_end)
-                {
-                    return PL_ERR_STREAM;
-                }
-                memcpy(&stage[filled], payload, marker);
-                payload += marker;
-                filled += marker;
-                decoded += marker;
-            }
-            else if (marker <= 0x7FUL)
-            { /* byte repeat run */
-                uint32_t run_len = marker - 0x3FUL;
-                if (payload >= payload_end)
-                {
-                    return PL_ERR_STREAM;
-                }
-                memset(&stage[filled], *payload++, run_len);
-                filled += run_len;
-                decoded += run_len;
-            }
-            else
-            { /* zero run */
-                uint32_t run_len = marker - 0x7FUL;
-                memset(&stage[filled], 0, run_len);
-                filled += run_len;
-                decoded += run_len;
-            }
-            if (decoded > hdr->raw_len)
-            {
-                return PL_ERR_STREAM; /* payload exceeds declared image */
-            }
-        }
-
-        /* Check the byte order once, on the first decoded bytes. */
-        if ((!sync_checked) && (filled != 0UL))
-        {
-            uint32_t scan = (filled < SYNC_SCAN_BYTES) ? filled : SYNC_SCAN_BYTES;
-            if (!has_pcap_sync_word(stage, scan))
-            {
-                return PL_ERR_NO_SYNC;
-            }
-            sync_checked = true;
-        }
-
-        /* Whole words out; the <4 remainder carries to the next round
-           (empty at a clean end: raw_len is word-aligned). */
-        {
-            uint32_t words = filled / 4UL;
-            uint32_t rem = filled & 3UL;
-
-            if (words != 0UL)
-            {
-                cache_clean(stage, words * 4UL);
-                crc = crc32_update(crc, stage, words * 4UL);
-                st = pcap_send_block(dma_stage_buf, words);
-                if (st != PL_OK)
-                {
-                    return st;
-                }
-            }
-            if (rem != 0UL)
-            {
-                memcpy(stage, &stage[words * 4UL], rem);
-                filled = rem;
-            }
-            else
-            {
-                filled = 0UL;
-            }
-        }
-
-        if (stream_done)
-        {
-            break;
-        }
-        /* Buffer full with payload still flowing: go around and DMA. */
-    }
-
-    if (decoded != hdr->raw_len)
-    {
-        return PL_ERR_STREAM; /* end marker hit too early */
-    }
-    if (payload != payload_end)
-    {
-        return PL_ERR_STREAM; /* trailing bytes past the end marker */
-    }
-    if ((~crc) != hdr->crc32)
-    {
-        return PL_ERR_CRC;
-    }
-    return PL_OK;
-}
-
 /* Sink state for load_zblz_image(): the staging buffer fills through
    zblz_sink() while lzma_decode_stream() runs. Chunk lengths are whole
-   words (middleware contract), so 'filled' is always word-aligned and
-   the DMA carry logic of the RLE path is not needed. */
+   words (middleware contract), so 'filled' is always word-aligned. */
 struct zblz_sink
 {
     uint8_t *stage;
@@ -663,9 +531,9 @@ static enum pl_status load_zblz_image(const uint8_t *img, const struct zb_header
 
 /**
  * @brief  Push an image over the PCAP bridge; requires pcap_open(). The
- *         first word picks the path - only the packed blobs start with
- *         a "ZBLZ"/"ZBSP" magic (bitgen images start with 0xFFFFFFFF).
- * @param  img ZBLZ/ZBSP blob (no alignment) or raw bitstream (64-byte
+ *         first word picks the path - only packed blobs start with the
+ *         "ZBLZ" magic (bitgen images start with 0xFFFFFFFF).
+ * @param  img ZBLZ blob (no alignment) or raw bitstream (64-byte
  *             aligned).
  * @param  len Multiple of 4.
  * @return PL_OK, or the reason it failed.
@@ -687,11 +555,11 @@ static enum pl_status pl_load_image(const void *img, uint32_t len)
     }
 
     memcpy(&magic, bytes, sizeof(magic));
-    if ((magic == ZBLZ_MAGIC) || (magic == ZBSP_MAGIC))
+    if (magic == ZBLZ_MAGIC)
     {
         struct zb_header hdr;
 
-        st = parse_zb_header(bytes, len, magic, &hdr);
+        st = parse_zb_header(bytes, len, &hdr);
         if (st != PL_OK)
         {
             return st;
@@ -701,7 +569,7 @@ static enum pl_status pl_load_image(const void *img, uint32_t len)
         {
             return st;
         }
-        st = (magic == ZBLZ_MAGIC) ? load_zblz_image(bytes, &hdr) : load_zbsp_image(bytes, &hdr);
+        st = load_zblz_image(bytes, &hdr);
     }
     else
     {
@@ -724,7 +592,7 @@ static enum pl_status pl_load_image(const void *img, uint32_t len)
  *         all reset lines asserted (a half-configured design never runs),
  *         push, wait for DONE, open the shifters. The lines stay
  *         asserted on return - clock the fabric and release when ready.
- * @param  img ZBLZ/ZBSP packed blob or raw bitstream.
+ * @param  img ZBLZ packed blob or raw bitstream.
  * @param  len Length in bytes, a multiple of 4.
  * @return PL_OK, or the reason it failed.
  */

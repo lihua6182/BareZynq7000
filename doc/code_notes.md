@@ -363,34 +363,31 @@ L1 推来的数据执行，L2 清到旧行 → DMA 读到旧数据。正确序�
 
 DevC DMA 的"不跨 4KB 页"由**源地址 64 字节对齐**保证（DMA 发 64B burst，4KB 是 64
 的倍数）——所以一条覆盖整个镜像的 DMA 命令是合法的，只要镜像 64B 对齐。
-ZBSP 路径的 staging buffer 固定 64B 对齐、每块不跨页。
+ZBLZ 路径的 staging buffer 固定 64B 对齐、每块不跨页。
 
-### ZBLZ/ZBSP 打包与字节序
+### ZBLZ 打包与字节序
 
-- 打包：16 字节 LE 头（magic/raw_len/packed_len/crc32）+ 压缩载荷。默认 **ZBLZ**（raw
-  LZMA1，lc=0 lp=0 pb=0、8KB 字典、带结束标记，本设计实测 19.6:1）；`--codec rle` 退回
-  **ZBSP**（SEGGER `BSP_FPGA.c` 同款 RLE，9.9:1，兜底/调试用）。magic 兼任路径选择：
-  bitgen 镜像以 0xFFFFFFFF 填充开头。
-- **为什么是 LZMA 不是哈夫曼/RLE 调优**：对当前镜像，RLE 载荷的 69% 是字面数据字节
-  （非零帧内容），RLE 类完全无能为力；纯字节哈夫曼理论下限只有 173KB（1.21x）。剩余
-  冗余是"相同帧模式跨镜像重复"，只有 LZ 匹配+熵编码能吃掉：deflate 126KB（1.66x）、
-  LZMA 106KB（1.97x）。实测数据见 build/compress_study*.py（研究脚本，gitignore 内）。
+- 打包：16 字节 LE 头（magic/raw_len/packed_len/crc32）+ **ZBLZ** 载荷（raw LZMA1，
+  lc=0 lp=0 pb=0、8KB 字典、带结束标记，本设计实测 19.6:1）。magic 兼任路径选择：
+  非 ZBLZ 的镜像按原始 bitstream 直接推给 PCAP；bitgen 镜像以 0xFFFFFFFF 填充开头。
+- **为什么选 LZMA**：RLE 类方案只有 9.9:1，且载荷的 69% 是字面数据字节，RLE 无能为力；
+  剩余冗余是"相同帧模式跨镜像重复"，需要 LZ 匹配+熵编码。deflate 16.2:1，
+  LZMA 19.6:1。实测数据见 build/compress_study*.py（研究脚本，gitignore 内）。
 - **编码器↔解码器契约**：`convert_bitstream.py` 的 `LZMA_FILTERS` 与
   `lzma_stream.c` 的 `lzma_props`（`00 00 20 00 00`）+ `LZMA_STREAM_DICT_BYTES` 必须
   同步改。字典故意只用 8KB：7-series 帧重复是局部的，实测 8KB 与 8MB 字典比率只差
-  0.2%，而固件侧静态内存（32KB 窗 + 5.5KB probs + 4KB stage）就定了。
+  0.2%，而固件侧内存（32KB 窗 + 5.5KB probs + 4KB stage）就定了。
 - **滑动窗口为什么合法**：SDK 的 Dictionary Interface 官方支持"用掉 dic 数据后手动回退
   dicPos"；distance 校验由 `checkDicSize = prop.dicSize`（8KB）封顶（LzmaDec.c:519），
   所以窗口滑走时保留最后 8KB（= 最长匹配距离）即永远够。窗口 32KB > 字典 8KB，每轮
-  滑出 24KB。probs 数量 1984+0x300<<lc=2752 个，经一次性静态 arena 分配器交给
-  `LzmaDec_AllocateProbs`，尺寸错误会在运行时变 `LZMA_STREAM_MEM`（响亮失败）。
+  滑出 24KB。probs 数量 1984+0x300<<lc=2752 个，经 `LzmaDec_AllocateProbs` 从
+  newlib 堆分配；链接脚本断言堆 ≥48KB，分配失败会变 `LZMA_STREAM_MEM`（响亮失败）。
 - **验证方式**：无主机 C 编译器，装了 ziglang（`python -m pip install ziglang`）后用
   `zig cc` 把**真实中间件源码**（lzma_stream.c + vendored LzmaDec.c）编成主机程序，
   跑**真实发布载荷**（从 board_fpga_bitstream.c 提取）：字节级等于参考 PCAP 镜像、
   CRC 一致、截断/损坏载荷正确拒绝、同一静态区二次解码正确（对应多次 fpga_load）。
   测试脚手架在 build/lzma_host_test/（gitignore 内）。板侧 zblz_sink/zblz_flush 是
-  RLE 路径的同构搬运（整字 chunk、满 4KB 一条 DMA），未被主机测试覆盖，首次上板
-  重点看这条。
+  整字 chunk、满 4KB 一条 DMA 的搬运，未被主机测试覆盖，首次上板重点看这条。
 - 字节序：PCAP 消费**小端字序**，sync word `0xAA995566` 在字节流里必须是 `66 55 99 AA`
   （内核 zynq-fpga 的 "byte swapped .bin"）。喂进 bitgen 原生大端 .bin 的症状很阴险：
   DMA 照推 2MB、PL 全忽略，几秒后只报一个泛泛的 NO_DONE。
@@ -405,6 +402,8 @@ ZBSP 路径的 staging buffer 固定 64B 对齐、每块不跨页。
 
 ### main 的调用顺序（2026-10-02 起：console 先于 PL）
 
+`board.h` 的 `BOARD_PL_ENABLE`（默认 1）设为 0 时 `board_init()` 跳过
+bitstream/FCLK/复位释放，`board_pl_status()` 返回 `PL_DISABLED`。
 `board_init()` 原来排在 main 最前（PL 加载在静默期完成，失败要等控制台起来
 才看到 pl_status）。现挪到 `uart_init` 之后、前加一行 printf——加载/失败
 全程可见。依据：board 路径无 console 依赖，console 也不依赖 PL，双向独立；

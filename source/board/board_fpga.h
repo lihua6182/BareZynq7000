@@ -8,14 +8,12 @@
  *   control plane   resets, level shifters, status  (UG585 ch.2, ch.6)
  *
  * The image lives in board_fpga_bitstream.c - generated data, not code;
- * a bitstream swap touches only that pair. Three image forms, picked by
+ * a bitstream swap touches only that pair. Two image forms, picked by
  * the first word:
  *
- *   packed  "ZBLZ" magic + header + raw LZMA1 payload
- *           (convert_bitstream.py default; middleware/lzma decodes,
- *           ~2x tighter than RLE), or "ZBSP" + RLE payload (fallback);
- *           both share a 16-byte header (magic/lengths/CRC-32) and
- *           decode through a staging buffer, one DMA per chunk
+ *   packed  "ZBLZ" magic + 16-byte header (magic/lengths/CRC-32) +
+ *           raw LZMA1 payload (convert_bitstream.py; middleware/lzma
+ *           decodes through a staging buffer, one DMA per chunk)
  *   direct  raw PCAP-form bitstream, one DMA command (FSBL style)
  *
  * Trap: FPGA_RST_CTRL resets to 0x01F33F0F - all four reset lines
@@ -57,6 +55,7 @@ enum pl_status
     PL_ERR_DMA_TIMEOUT, /* DMA_DONE never arrived                 */
     PL_ERR_NO_DONE,     /* DMA done, but PL DONE never asserted   */
     PL_NO_IMAGE,        /* boot(): this build embeds no bitstream */
+    PL_DISABLED,        /* BOARD_PL_ENABLE = 0: PL bring-up skipped */
 };
 
 /* Number of PS->PL reset lines (FCLKRESETN[3:0]). */
@@ -215,8 +214,8 @@ enum pl_status fpga_config_clear(void);
 
 /*
  * Configure the PL from an image: bridge up, logic held in reset, push,
- * wait for DONE, open the level shifters. 'img' is a ZBLZ or ZBSP
- * packed blob (no alignment) or a raw bitstream (64-byte aligned,
+ * wait for DONE, open the level shifters. 'img' is a ZBLZ packed blob
+ * (no alignment) or a raw bitstream (64-byte aligned,
  * len % 4 == 0,
  * PCAP byte order: sync word 0xAA995566 appears as 66 55 99 AA).
  *

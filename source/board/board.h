@@ -10,6 +10,11 @@
 /* UART0 / USB0 来自 zynq_soc.h, 供 BOARD_UART / BOARD_USB 取实例。     */
 /* ------------------------------------------------------------------ */
 
+/* PL 配置: 1 = board_init() 加载 bitstream、配置 FCLK 并释放复位；0 = 跳过整个 PL 初始化。 */
+#ifndef BOARD_PL_ENABLE
+#define BOARD_PL_ENABLE (1)
+#endif
+
 /* LED: 推挽输出 (任意 MIO 脚, GPIO 为 L0 复用, 全脚一致)。 */
 #define BOARD_LED_MIO (24u)
 

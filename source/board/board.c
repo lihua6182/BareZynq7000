@@ -13,7 +13,11 @@
 #include "zynq_uart.h"
 
 /* Outcome of the last PL programming; query via board_pl_status(). */
+#if BOARD_PL_ENABLE
 static enum pl_status pl_load_status = PL_NO_IMAGE;
+#else
+static enum pl_status pl_load_status = PL_DISABLED;
+#endif
 
 void board_console_init(void)
 {
@@ -69,6 +73,7 @@ enum pl_status board_pl_status(void)
  */
 void board_init(void)
 {
+#if BOARD_PL_ENABLE
     /* fpga_img[] is generated from bitstream.bin; zero length = --stub. */
     if (FPGA_IMG_LEN != 0u)
     {
@@ -81,4 +86,5 @@ void board_init(void)
         clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true); /* FCLK1 = IO PLL / 20 = 50 MHz */
         fpga_reset_release_all();
     }
+#endif
 }
