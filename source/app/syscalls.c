@@ -1,8 +1,6 @@
 /**
  * @file    syscalls.c
- * @brief   newlib syscall stubs (CubeMX template). _write/_read loop over
- *          the weak __io_putchar/__io_getchar; the strong versions in
- *          board.c bind the console to the board UART.
+ * @brief   newlib syscall stubs (CubeMX template).
  *          Copyright (c) 2020-2024 STMicroelectronics (template source).
  */
 
@@ -17,9 +15,6 @@
 #include <time.h>
 
 /* Variables */
-extern int __io_putchar(int ch) __attribute__((weak));
-extern int __io_getchar(void) __attribute__((weak));
-
 char *__env[1] = {0};
 char **environ = __env;
 
@@ -69,51 +64,6 @@ void _exit(int status)
     while (1)
     {
     } /* Make sure we hang here */
-}
-
-/**
- * @brief  Read from a file descriptor.
- * @param  file File descriptor (unused).
- * @param  ptr  Buffer to fill.
- * @param  len  Number of bytes to read.
- * @return Number of bytes read.
- *
- * Everything comes from __io_getchar(); override that weak symbol to
- * wire the console to a real UART.
- */
-__attribute__((weak)) int _read(int file, char *ptr, int len)
-{
-    (void)file;
-    int idx;
-
-    for (idx = 0; idx < len; idx++)
-    {
-        *ptr++ = __io_getchar();
-    }
-
-    return len;
-}
-
-/**
- * @brief  Write to a file descriptor.
- * @param  file File descriptor (unused).
- * @param  ptr  Data to write.
- * @param  len  Number of bytes to write.
- * @return Number of bytes written.
- *
- * Everything goes to __io_putchar(); override that weak symbol to wire
- * the console to a real UART.
- */
-__attribute__((weak)) int _write(int file, char *ptr, int len)
-{
-    (void)file;
-    int idx;
-
-    for (idx = 0; idx < len; idx++)
-    {
-        __io_putchar(*ptr++);
-    }
-    return len;
 }
 
 /**

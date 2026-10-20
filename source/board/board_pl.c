@@ -1,12 +1,12 @@
 /**
- * @file board_fpga.c
+ * @file board_pl.c
  * @brief PL configuration over the DevC/PCAP bridge (UG585 ch.6, ch.2).
  *        What needs a loop or a sequence; the single-register primitives
- *        are static inline in board_fpga.h. The image itself lives in
- *        board_fpga_bitstream.c, board.c decides when to load it.
+ *        are static inline in board_pl.h. The image itself lives in
+ *        board_pl_bitstream.c, board.c decides when to load it.
  */
 
-#include "board_fpga.h"
+#include "board_pl.h"
 
 #include <string.h>
 
@@ -91,7 +91,7 @@ static enum pl_status wait_pl_init(bool ready)
 
     for (i = 0U; i < PL_INIT_POLL_LIMIT; i++)
     {
-        if (fpga_is_ready() == ready)
+        if (pl_is_ready() == ready)
         {
             return PL_OK;
         }
@@ -105,18 +105,18 @@ static enum pl_status wait_pl_init(bool ready)
  * @param  line Reset line, 0..3 (FCLKRESETN[line]).
  * @return 0 on success, -1 on a bad line.
  */
-int fpga_reset_pulse(uint32_t line)
+int pl_reset_pulse(uint32_t line)
 {
-    if (line >= FPGA_RESET_LINE_COUNT)
+    if (line >= PL_RESET_LINE_COUNT)
     {
         return -1;
     }
-    if (fpga_reset_assert(line) != 0)
+    if (pl_reset_assert(line) != 0)
     {
         return -1;
     }
     busy_wait_loops(RESET_PULSE_LOOPS);
-    return fpga_reset_release(line);
+    return pl_reset_release(line);
 }
 
 /**
@@ -125,12 +125,12 @@ int fpga_reset_pulse(uint32_t line)
  *         later load is not fooled by the previous design.
  * @return PL_OK, or the reason the PL never came back.
  */
-enum pl_status fpga_config_clear(void)
+enum pl_status pl_config_clear(void)
 {
     uint32_t ctrl;
     enum pl_status st;
 
-    if (fpga_is_powered() == false)
+    if (pl_is_powered() == false)
     {
         return PL_ERR_NO_POWER;
     }
@@ -236,7 +236,7 @@ static void pcap_open(void)
     uint32_t ctrl;
 
     /* UG585 ch.2 step 2: PS->PL level shifters on. */
-    fpga_lvl_ps_to_pl();
+    pl_lvl_ps_to_pl();
 
     /* DevC APB registers reject writes until the unlock word is written
        once (UG585 devcfg.UNLOCK). */
@@ -264,7 +264,7 @@ static enum pl_status pcap_start(void)
     enum pl_status st;
 
     /* MCTRL[PCFG_POR_B]: reported here, not as a PCFG_INIT timeout. */
-    if (fpga_is_powered() == false)
+    if (pl_is_powered() == false)
     {
         return PL_ERR_NO_POWER;
     }
@@ -275,7 +275,7 @@ static enum pl_status pcap_start(void)
     SLCR->LOCK = SLCR_LOCK_KEY;
 
     /* Erase the old design and wait for the PL to come back ready. */
-    st = fpga_config_clear();
+    st = pl_config_clear();
     if (st != PL_OK)
     {
         return st;
@@ -363,7 +363,7 @@ static enum pl_status pcap_wait_pl_done(void)
     }
 
     /* UG585 ch.2 step 5: the PL drives PS inputs now. */
-    fpga_lvl_all();
+    pl_lvl_all();
 
     return PL_OK;
 }
@@ -596,14 +596,14 @@ static enum pl_status pl_load_image(const void *img, uint32_t len)
  * @param  len Length in bytes, a multiple of 4.
  * @return PL_OK, or the reason it failed.
  */
-enum pl_status fpga_load(const void *img, uint32_t len)
+enum pl_status pl_load(const void *img, uint32_t len)
 {
     /* Before the image is touched: a rejected image leaves the bridge
        usable. */
     pcap_open();
 
     /* Partial designs would run; hold the logic until DONE. */
-    fpga_reset_assert_all();
+    pl_reset_assert_all();
 
     return pl_load_image(img, len);
 }

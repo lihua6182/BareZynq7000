@@ -6,8 +6,8 @@
 
 #include "board.h"
 
-#include "board_fpga.h"
-#include "board_fpga_bitstream.h"
+#include "board_pl.h"
+#include "board_pl_bitstream.h"
 #include "zynq_clock.h"
 #include "zynq_mio.h"
 #include "zynq_uart.h"
@@ -29,18 +29,28 @@ void board_console_init(void)
     uart_init(BOARD_UART, BOARD_UART_BAUD_HZ);
 }
 
-/* newlib 控制台绑定: syscalls.c 的 _write/_read 循环弱符号
- * __io_putchar/__io_getchar (模板契约, 名字不可改), 这两个强版本把
- * printf 系列绑到板级控制台串口。 */
-int __io_putchar(int ch)
+int _write(int file, char *ptr, int len)
 {
-    uart_putc(BOARD_UART, ch);
-    return ch;
+    (void)file;
+    int idx;
+
+    for (idx = 0; idx < len; idx++)
+    {
+        uart_putc(BOARD_UART, ptr[idx]);
+    }
+    return len;
 }
 
-int __io_getchar(void)
+int _read(int file, char *ptr, int len)
 {
-    return uart_getc(BOARD_UART);
+    (void)file;
+    int idx;
+
+    for (idx = 0; idx < len; idx++)
+    {
+        ptr[idx] = (char)uart_getc(BOARD_UART);
+    }
+    return len;
 }
 
 void board_led_init(void)
@@ -74,17 +84,17 @@ enum pl_status board_pl_status(void)
 void board_init(void)
 {
 #if BOARD_PL_ENABLE
-    /* fpga_img[] is generated from bitstream.bin; zero length = --stub. */
-    if (FPGA_IMG_LEN != 0u)
+    /* pl_img[] is generated from bitstream.bin; zero length = --stub. */
+    if (PL_IMG_LEN != 0u)
     {
-        pl_load_status = fpga_load(fpga_img, FPGA_IMG_LEN);
+        pl_load_status = pl_load(pl_img, PL_IMG_LEN);
     }
 
     if (pl_load_status == PL_OK)
     {
         clock_fclk_config(FCLK0, FCLK_SRC_IO, 10U, 1U, true); /* FCLK0 = IO PLL / 10 = 100 MHz */
         clock_fclk_config(FCLK1, FCLK_SRC_IO, 20U, 1U, true); /* FCLK1 = IO PLL / 20 = 50 MHz */
-        fpga_reset_release_all();
+        pl_reset_release_all();
     }
 #endif
 }

@@ -1,7 +1,7 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-#include "board_fpga.h"
+#include "board_pl.h"
 #include "zynq_soc.h"
 
 /* ------------------------------------------------------------------ */

@@ -14,9 +14,9 @@
   3. Prepend a 16-byte LE header: 4-byte magic "ZBLZ" (also the load-path
      selector - bitgen images start with 0xFFFFFFFF padding), raw_len,
      packed_len, CRC-32 (EDB88320) over the raw image.
-  4. Emit board_fpga_bitstream.c/board_fpga_bitstream.h defining the
-     packed image as a 64-byte-aligned const array (fpga_img[]). The pair
-     is data only - the code that consumes it is board_fpga.c.
+  4. Emit board_pl_bitstream.c/board_pl_bitstream.h defining the
+     packed image as a 64-byte-aligned const array (pl_img[]). The pair
+     is data only - the code that consumes it is board_pl.c.
 
 Usage:
   convert_bitstream.py <bitstream.bin> <out.c> <out.h>
@@ -70,9 +70,9 @@ def write_pair(out_c: str, out_h: str, c_body: str, c_comment: str, h_comment: s
 
 #include <stdint.h>
 
-extern const uint8_t fpga_img[];
+extern const uint8_t pl_img[];
 
-#define FPGA_IMG_LEN {length}u
+#define PL_IMG_LEN {length}u
 
 #endif /* {guard} */
 """)
@@ -85,13 +85,13 @@ extern const uint8_t fpga_img[];
  */
 #include "{name_h}"
 
-const uint8_t fpga_img{c_decl} __attribute__((aligned(64))) = {{
+const uint8_t pl_img{c_decl} __attribute__((aligned(64))) = {{
 {c_body}}};
 """)
 
 
 def emit_stub(out_c: str, out_h: str) -> None:
-    """Empty image: FPGA_IMG_LEN == 0 makes board_init() skip programming
+    """Empty image: PL_IMG_LEN == 0 makes board_init() skip programming
     and report PL_NO_IMAGE. The definition carries one placeholder
     byte so C never sees a zero-size array."""
     comment = "Stub: this build embeds no PL bitstream (--stub conversion)."
@@ -169,7 +169,7 @@ def main() -> None:
                  f" *   packed  {len(hdr)}-byte header + {len(packed)}-byte payload = {len(image)} bytes ({len(pcap) / len(image):.1f}:1)\n"
                  f" *   crc32 of the unpacked image: 0x{zlib.crc32(pcap) & 0xFFFFFFFF:08X}")
     comment_h = f"Packed PL bitstream ({len(image)} bytes, ZBLZ format)."
-    write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image), "[FPGA_IMG_LEN]")
+    write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image), "[PL_IMG_LEN]")
 
     print(f"convert_bitstream.py: {len(pcap)} -> {len(image)} bytes "
           f"({len(pcap) / len(image):.1f}:1) -> {args.out_c}")

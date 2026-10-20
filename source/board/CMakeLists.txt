@@ -8,10 +8,10 @@ project("board" C)
 #   board_usb.c             USB0 board wiring: ULPI pin mux, USB3300 PHY
 #                           reset, clock routing, GIC - implements the
 #                           CherryUSB usb_dc_low_level_init()/deinit() hooks
-#   board_fpga.c/h          the PL itself: DevC/PCAP configuration plus
+#   board_pl.c/h          the PL itself: DevC/PCAP configuration plus
 #                           the control plane (resets, level shifters,
 #                           status) - code, hand-written
-#   board_fpga_bitstream.*  the PL image - generated data, produced by
+#   board_pl_bitstream.*  the PL image - generated data, produced by
 #                           the VSCode task "Convert PL bitstream"
 #                           (tools/convert_bitstream.py) from bitstream.bin
 #                           in this folder
@@ -25,8 +25,8 @@ target_sources("board"
     INTERFACE
     "board.c"
     "board_usb.c"
-    "board_fpga.c"
-    "board_fpga_bitstream.c"
+    "board_pl.c"
+    "board_pl_bitstream.c"
 )
 
 target_include_directories("board"
@@ -41,10 +41,10 @@ target_link_libraries("board"
     "lzma"
 )
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/board_fpga_bitstream.c")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/board_pl_bitstream.c")
     message(FATAL_ERROR
-        "board_fpga_bitstream.c is missing - run the VSCode task "
+        "board_pl_bitstream.c is missing - run the VSCode task "
         "\"Convert PL bitstream\" (or: python tools/convert_bitstream.py "
-        "source/board/bitstream.bin source/board/board_fpga_bitstream.c "
-        "source/board/board_fpga_bitstream.h)")
+        "source/board/bitstream.bin source/board/board_pl_bitstream.c "
+        "source/board/board_pl_bitstream.h)")
 endif()

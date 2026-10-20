@@ -5,7 +5,7 @@
  *        contract is documented in lzma_stream.h; the sdk/ files stay
  *        verbatim upstream. Working memory (probs + window, ~38 KiB)
  *        comes from the heap and is freed on every exit, so runtime
- *        fpga_load() can decode again whenever the heap has room.
+ *        pl_load() can decode again whenever the heap has room.
  */
 
 #include "lzma_stream.h"

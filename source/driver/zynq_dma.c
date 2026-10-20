@@ -39,7 +39,7 @@
 uint32_t dma_last_fault_type;
 uint32_t dma_last_fault_source;
 
-/* 完成轮询上限 (与 board_fpga 的 PCAP 轮询同量级, 667MHz 下若干秒)。 */
+/* 完成轮询上限 (与 board_pl 的 PCAP 轮询同量级, 667MHz 下若干秒)。 */
 #define DMA_EVENT_POLL_LIMIT (60000000u)
 
 /* 微码缓冲: DMAC 读它、CPU 写它, 放非缓存 OCM 免一致性维护。

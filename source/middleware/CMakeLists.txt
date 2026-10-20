@@ -2,7 +2,7 @@ project("middleware" C ASM)
 
 # PL-bitstream codec: public-domain LZMA SDK decoder (sdk/, vendored
 # verbatim) plus the streaming wrapper the ZBLZ load path in
-# board_fpga.c consumes (lzma_stream.c/h; encoder side:
+# board_pl.c consumes (lzma_stream.c/h; encoder side:
 # tools/convert_bitstream.py --codec lzma).
 add_library("lzma" INTERFACE)
 

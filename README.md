@@ -33,7 +33,7 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 ```
   app/        可执行目标 app：main.c（CDC ACM 双向吞吐基准）+ newlib 桩（syscalls/sysmem）
   board/      板级：board（bring-up + BOARD_* 引脚宏 + 控制台绑定）、board_usb（USB0 板级接线）、
-              board_fpga（PL 配置 + PL 控制面，手写）、board_fpga_bitstream（PL 镜像，生成物）
+              board_pl（PL 配置 + PL 控制面，手写）、board_pl_bitstream（PL 镜像，生成物）
   driver/     PS 外设：zynq_mio（MIO pad/pinmux + GPIO 控制器，模块词 mio_）、zynq_uart、
               zynq_usb（USB0 控制器原语 + dcache 钩子，模块词 usb_）、zynq_dma（PL330 微码搬运）、
               zynq_cache（L1/PL310 维护）、zynq_spi（Cadence SPI 主机）、zynq_i2c（Cadence I2C 主机）；
@@ -50,11 +50,11 @@ DDR不使用, MMU中故意不映射(访问即translation fault)。
 
 - LED：MIO 24，推挽输出；PL 配置成功时 500ms 慢闪，失败时 100ms 快闪（`board_pl_status()` 给出失败原因）。
 - 串口：UART0，MIO 11 = TX / MIO 10 = RX，115200 8N1，轮询收发，打印 PL 配置结果与 tick 计数。
-  newlib 控制台（`__io_putchar/__io_getchar` 强定义）也收在 board.c，`printf` 即走板级串口。
+  newlib 控制台（`_write/_read` 强定义）也收在 board.c，`printf` 即走板级串口。
 - tick：TTC0 计数器 0 的 interval 中断（SPI 42），1ms，全部经 IRQ 投递（不用 FIQ）。
-- PL：上电即由 `board_init()` 经 DevC/PCAP 配置，FCLK0 = IO PLL / 10 = 100MHz，随后释放 PL 复位（`slcr.FPGA_RST_CTRL` 复位值为 0xF，不清则 GP0 访问挂死）。`board.h` 的 `BOARD_PL_ENABLE`（默认 1）设为 0 可跳过整个 PL 初始化（bitstream/FCLK/复位），此时 `board_pl_status()` 返回 `PL_DISABLED`。对 PL 的所有操作走 `board_fpga.h` 的 API：
-  `fpga_reset_assert/release/pulse`、`fpga_reset_assert_all/release_all`、`fpga_lvl_ps_to_pl/all/off`、
-  `fpga_is_powered/ready/done`、`fpga_config_clear()`（PROG_B 清配置）、`fpga_load()`（配置并保持在复位）；
+- PL：上电即由 `board_init()` 经 DevC/PCAP 配置，FCLK0 = IO PLL / 10 = 100MHz，随后释放 PL 复位（`slcr.FPGA_RST_CTRL` 复位值为 0xF，不清则 GP0 访问挂死）。`board.h` 的 `BOARD_PL_ENABLE`（默认 1）设为 0 可跳过整个 PL 初始化（bitstream/FCLK/复位），此时 `board_pl_status()` 返回 `PL_DISABLED`。对 PL 的所有操作走 `board_pl.h` 的 API：
+  `pl_reset_assert/release/pulse`、`pl_reset_assert_all/release_all`、`pl_lvl_ps_to_pl/all/off`、
+  `pl_is_powered/ready/done`、`pl_config_clear()`（PROG_B 清配置）、`pl_load()`（配置并保持在复位）；
   配置结果类型是 `enum pl_status`（`PL_OK` / `PL_ERR_*` / `PL_NO_IMAGE` / `PL_DISABLED`）。
 - 上一代 PL 设计（Vivado `C:\WorkSpace\fpga\project_1`）：SmartConnect + **axi_bram_ctrl @ 0x4000_0000，8 KB**，
   复位全接 `FCLK_RESET0_N`（配套的 `bram_test()` 已随 `main()` 改造移除）。
@@ -105,13 +105,13 @@ cmake --build build                    # 产物 build/source/app/app.{elf,bin,he
 stop-mode 下读无映射/无响应的地址会卡死核，只有断电能解。
 
 PL 比特流：`source/board/bitstream.bin`（Vivado 原生 .bin）经
-`python tools/convert_bitstream.py <in.bin> <out.c> <out.h>` 生成 `board_fpga_bitstream.c/h`
+`python tools/convert_bitstream.py <in.bin> <out.c> <out.h>` 生成 `board_pl_bitstream.c/h`
 （ZBLZ：raw LZMA1 + CRC32，~19.6:1），
 VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不要手工交换。
 解码器在 `source/middleware/lzma/`（公有领域 LZMA SDK + 流式封装，`lzma_stream.c/h`）。
 
-板级代码与镜像数据是分开的两个文件：`board_fpga.c/h` 是手写代码（PCAP 传输 + PL 控制面），
-`board_fpga_bitstream.c/h` 是生成的数据（只有 `fpga_img[]` 与 `FPGA_IMG_LEN`），换比特流只重新生成后者。
+板级代码与镜像数据是分开的两个文件：`board_pl.c/h` 是手写代码（PCAP 传输 + PL 控制面），
+`board_pl_bitstream.c/h` 是生成的数据（只有 `pl_img[]` 与 `PL_IMG_LEN`），换比特流只重新生成后者。
 
 ## 代码约定
 
@@ -122,7 +122,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
 - **命名要能自解释**：不看注释就应知道它做什么、操作谁。据此定的词表：
   `pl_*` 是 PL 这一层，PCAP 传输的内部步骤一律 `pcap_*`
   （`pcap_open → pcap_start → pcap_send_block → pcap_wait_pl_done`，另有 `pcap_ack_dma_done`），
-  数量宏统一 `*_COUNT`（`MIO_PIN_COUNT` 118 / `MIO_PAD_COUNT` 54 / `FPGA_RESET_LINE_COUNT` 4 / `IRQ_ID_COUNT` 96），
+  数量宏统一 `*_COUNT`（`MIO_PIN_COUNT` 118 / `MIO_PAD_COUNT` 54 / `PL_RESET_LINE_COUNT` 4 / `IRQ_ID_COUNT` 96），
   带单位的量写进名字（`tick_ms`、`ref_hz`、`byte_offset`、`word_count`），
   寄存器值参数跟寄存器同名（`uart_set_baud_gen(uart, baudgen)`、`uart_set_baud_div(uart, bauddiv)`），
   寄存器与位域名保持 UG585 原名（`zynq_soc.h`，改名会丢掉"查手册即所得"）。
@@ -142,7 +142,7 @@ VSCode task 名 "Convert PL bitstream"。脚本内部负责字节序转换，不
   | `irq_` | `zynq_irq.h` | GIC 分发 |
   | `tick_` | `zynq_tick.h` | TTC0 毫秒 tick |
   | `board_` | `board.h` | 板级 bring-up 与外设接线（只导出 `BOARD_*` 宏和 `board_*` API；board.c：console/LED/PL；board_usb.c：USB0 接线 + CherryUSB 钩子 `usb_dc_low_level_init`，名字是 middleware 契约） |
-  | `fpga_` | `board_fpga.h`、`board_fpga_bitstream.h` | PL 配置与控制面 / PL 镜像数据 |
+  | `pl_` | `board_pl.h`、`board_pl_bitstream.h` | PL 配置与控制面 / PL 镜像数据 |
   | `soc_` | `zynq_soc.c` | SoC 启动（MMU/L2/时钟/QSPI） |
   | `coproc_` | `driver/pl/zynq_ppc.h` | proto_coproc 协议协处理器访问（PL AXI4-Lite IP @ 0x4000_0000，SPI/SWD/JTAG 移位时序；不是 PS 外设） |
   | `swd_` | `driver/pl/zynq_swd.h` | SWD 访问层（CMSIS-DAP 风格，经 proto_coproc 移位；PPC 侧程序 `swd_dap.s`） |

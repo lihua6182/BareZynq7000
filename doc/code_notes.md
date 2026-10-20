@@ -336,7 +336,7 @@ ARM_CLK_CTRL 恢复成改动前的 BootROM 状态（原本未 bypass 的 PLL 先
 - **中央互连主设备**（USB/ENET/SD/DMA 控制器、DevC/PCAP）：不嗅探 PL310，
   CPU 写的数据必须用 `cache_clean/flush` 双层清写真正落到 OCM/DDR；读回方向
   `cache_invalidate` 双层丢弃（丢弃语义，只给 DMA 专用缓冲）。DevC/PCAP 是
-  PS AXI 互连主设备，不是 ACP 主设备（UG585 ch.5/ch.6）；board_fpga 的
+  PS AXI 互连主设备，不是 ACP 主设备（UG585 ch.5/ch.6）；board_pl 的
   staging buffer 在 OCM 上，L2 本来就不缓存 OCM，但按中央主设备的契约统一
   走 `cache_clean()`，避免以后把 buffer 移出 OCM 时静默读到旧数据。
 - **ACP 主设备**（PL 经 S_AXI_ACP）：硬件在 SCU/ACP 处与 L2 一致，
@@ -357,7 +357,7 @@ L1 推来的数据执行，L2 清到旧行 → DMA 读到旧数据。正确序�
 
 ---
 
-## board_fpga（PL 配置/PCAP）
+## board_pl（PL 配置/PCAP）
 
 ### 4KB 规则的正确理解
 
@@ -384,8 +384,8 @@ ZBLZ 路径的 staging buffer 固定 64B 对齐、每块不跨页。
   newlib 堆分配；链接脚本断言堆 ≥48KB，分配失败会变 `LZMA_STREAM_MEM`（响亮失败）。
 - **验证方式**：无主机 C 编译器，装了 ziglang（`python -m pip install ziglang`）后用
   `zig cc` 把**真实中间件源码**（lzma_stream.c + vendored LzmaDec.c）编成主机程序，
-  跑**真实发布载荷**（从 board_fpga_bitstream.c 提取）：字节级等于参考 PCAP 镜像、
-  CRC 一致、截断/损坏载荷正确拒绝、同一静态区二次解码正确（对应多次 fpga_load）。
+  跑**真实发布载荷**（从 board_pl_bitstream.c 提取）：字节级等于参考 PCAP 镜像、
+  CRC 一致、截断/损坏载荷正确拒绝、同一静态区二次解码正确（对应多次 pl_load）。
   测试脚手架在 build/lzma_host_test/（gitignore 内）。板侧 zblz_sink/zblz_flush 是
   整字 chunk、满 4KB 一条 DMA 的搬运，未被主机测试覆盖，首次上板重点看这条。
 - 字节序：PCAP 消费**小端字序**，sync word `0xAA995566` 在字节流里必须是 `66 55 99 AA`
@@ -398,7 +398,7 @@ ZBLZ 路径的 staging buffer 固定 64B 对齐、每块不跨页。
 `SLCR.FPGA_RST_CTRL`(0xF8000240) 复位值 `0x01F33F0F`：四根 FCLKRESETn 全在复位里，
 且寄存器只有 bit0-3 可用。不清零的表象是"配置成功"（PCAP DONE 照样断言），但 GP0
 上任何访问无响应——2026-09-29 上板排雷的主坑。FSBL 在配完 PL 后清整个寄存器，
-本工程同序：`fpga_load() → clock_fclk_config() → fpga_reset_release_all()`。
+本工程同序：`pl_load() → clock_fclk_config() → pl_reset_release_all()`。
 
 ### main 的调用顺序（2026-10-02 起：console 先于 PL）
 
@@ -425,8 +425,8 @@ DMA_DEST_LEN`：写 DEST_LEN 才入队并启动。完成 ack 要同时写 `INT_S
 
 ## 其它
 
-- `syscalls.c`：CubeMX 模板；`_write/_read` 循环弱符号 `__io_putchar/__io_getchar`，
-  board.c 里强定义绑到板级控制台 UART0。`_isatty=1` → newlib 行缓冲，`\n` 即刷出。
+- `syscalls.c`：CubeMX 模板；`_write/_read` 由 board.c 强定义，直接走板级控制台 UART0。
+  `_isatty=1` → newlib 行缓冲，`\n` 即刷出。
   `_sbrk` 用链接脚本的 `__heap_start__/__heap_end__`，不按 CubeMX 的
   `_end/_estack/_Min_Stack_Size` 公式（与本布局不符，会撞异常栈）。
 - `zynq_boot_header.c`：结构体字段注释是 UG585 ch.6 原文对照，别精简；校验和由

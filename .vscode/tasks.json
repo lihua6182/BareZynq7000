@@ -8,8 +8,8 @@
             "args": [
                 "${workspaceFolder}/tools/convert_bitstream.py",
                 "${workspaceFolder}/source/board/bitstream.bin",
-                "${workspaceFolder}/source/board/board_fpga_bitstream.c",
-                "${workspaceFolder}/source/board/board_fpga_bitstream.h"
+                "${workspaceFolder}/source/board/board_pl_bitstream.c",
+                "${workspaceFolder}/source/board/board_pl_bitstream.h"
             ],
             "presentation": {
                 "echo": true,

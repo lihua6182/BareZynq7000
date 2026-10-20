@@ -17,7 +17,7 @@
  *   (probs 5504 B via the SDK's own size check, dic 32 KB window; the
  *   window slides its last LZMA_STREAM_DICT_BYTES to the front when
  *   full - the longest match the encoder can emit, so every distance
- *   still resolves inside the buffer). Runtime fpga_load() may decode
+ *   still resolves inside the buffer). Runtime pl_load() may decode
  *   again whenever the heap has ~38 KiB free.
  *
  * Sink contract: called in decode order with whole-word chunks
