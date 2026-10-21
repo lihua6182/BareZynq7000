@@ -1,8 +1,8 @@
 {
     "cmake.configureOnOpen": true,
     "cmake.useCMakePresets": "always",
+    "cmake.cmakePath": "C:/Software/CMake-4.4.4/bin/cmake.exe",
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
     "files.associations": {
         "*.c": "c",
         "*.in": "c",

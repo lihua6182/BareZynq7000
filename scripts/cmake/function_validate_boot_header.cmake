@@ -1,27 +1,6 @@
-# BootROM header validation for raw Zynq-7000 QSPI XIP boot images.
-#
-# Dual-mode CMake file:
-#   - Included from CMakeLists (configure time): defines
-#     function_validate_boot_header(<target>), which registers a POST_BUILD
-#     step. Call it AFTER function_gcc_arm_gen_binary so the .bin exists.
-#   - Run with `cmake -DBIN_FILE=<image.bin> -P <this file>` (build time,
-#     from that POST_BUILD step): performs the check. No Python needed.
-#
-# Checks the fields of the 0x8C0-byte boot header (UG585 ch. 6, "BootROM
-# Header Parameters") against the rules the BootROM enforces before it hands
-# control to the image:
-#
-#   - width detection word / image signature / QSPI config word
-#   - source offset: >= 0x8C0 and 64-byte aligned
-#   - execute-in-place selection: image length and total length both 0
-#   - XIP start of execution: absolute address inside the 16 MB QSPI linear
-#     window, at or past the header, 64-byte aligned
-#   - header checksum: one's complement of the sum of words 0x20..0x44
 
 set(FUNCTION_VALIDATE_BOOT_HEADER_FILE "${CMAKE_CURRENT_LIST_DIR}/function_validate_boot_header.cmake")
 
-# boot_header_validate(<image.bin>): run all checks, fail the build with the
-# expected value(s) on any mismatch.
 function(boot_header_validate bin_file)
     if(NOT EXISTS "${bin_file}")
         message(FATAL_ERROR "Boot header check: image not found: ${bin_file}")
@@ -37,10 +16,8 @@ function(boot_header_validate bin_file)
 
     set(errors "")
 
-    # word_le(<out> <uppercase hex image> <byte offset>): little-endian 32-bit
-    # word of the image, as 8 uppercase hex digits (byte pairs reversed).
     function(word_le out hex off)
-        math(EXPR pos "2 * ${off}") # hex chars are 2 per byte
+        math(EXPR pos "2 * ${off}")
         string(SUBSTRING "${hex}" ${pos} 8 b)
         string(SUBSTRING "${b}" 6 2 b0)
         string(SUBSTRING "${b}" 4 2 b1)
@@ -89,7 +66,7 @@ function(boot_header_validate bin_file)
         endif()
 
         if(image_length EQUAL 0)
-            # Execute-in-place (UG585 Table 6-5, note 6)
+
             if(NOT total_length EQUAL 0)
                 list(APPEND errors "XIP image: total image length must be 0 when the image length is 0")
             endif()
@@ -105,7 +82,7 @@ function(boot_header_validate bin_file)
         endif()
 
         set(sum 0)
-        foreach(off RANGE 32 68 4) # words 0x20..0x44
+        foreach(off RANGE 32 68 4)
             word_le(w "${image}" ${off})
             math(EXPR sum "${sum} + 0x${w}")
         endforeach()
@@ -132,8 +109,6 @@ function(boot_header_validate bin_file)
     message(STATUS "BootROM header OK (${bin_file}, ${size} bytes)")
 endfunction()
 
-# Register the POST_BUILD validation of <target>'s raw binary. Must be
-# called after function_gcc_arm_gen_binary(<target>).
 function(function_validate_boot_header target)
     add_custom_command(TARGET "${target}" POST_BUILD
         COMMAND ${CMAKE_COMMAND}
@@ -144,7 +119,6 @@ function(function_validate_boot_header target)
     )
 endfunction()
 
-# Script-mode entry point: cmake -DBIN_FILE=<image.bin> -P <this file>
 if(CMAKE_SCRIPT_MODE_FILE)
     if(NOT DEFINED BIN_FILE)
         message(FATAL_ERROR "Usage: cmake -DBIN_FILE=<image.bin> -P ${CMAKE_SCRIPT_MODE_FILE}")

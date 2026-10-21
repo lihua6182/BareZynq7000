@@ -1,12 +1,3 @@
-/**
- * @file lzma_stream.c
- * @brief Streaming wrapper over the LZMA SDK decoder (Dictionary
- *        Interface): raw LZMA1 in, whole-word chunks out. The encoder
- *        contract is documented in lzma_stream.h; the sdk/ files stay
- *        verbatim upstream. Working memory (probs + window, ~38 KiB)
- *        comes from the heap and is freed on every exit, so runtime
- *        pl_load() can decode again whenever the heap has room.
- */
 
 #include "lzma_stream.h"
 
@@ -15,16 +6,10 @@
 
 #include "LzmaDec.h"
 
-/* LZMA props: one byte (pb*5 + lp)*9 + lc, then dicSize little-endian.
-   lc=0 lp=0 pb=0 and dicSize=8192 give 00 00 20 00 00 - the exact
-   image of tools/convert_bitstream.py LZMA_FILTERS. */
 static const uint8_t lzma_props[LZMA_PROPS_SIZE] = {
     0x00U, 0x00U, 0x20U, 0x00U, 0x00U,
 };
 
-/* Heap-backed ISzAlloc: probs come from LzmaDec_AllocateProbs() through
-   this vtable (its size check stays in force); the window is malloc'd
-   directly below. */
 static void *lzma_alloc(ISzAllocPtr ctx, size_t size) {
     (void)ctx;
     return malloc(size);
@@ -42,7 +27,7 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
                                            lzma_stream_sink_fn sink, void *user) {
     CLzmaDec dec;
     uint8_t *dic;
-    uint32_t consumed = 0U; /* dic bytes already handed to the sink */
+    uint32_t consumed = 0U;
     uint32_t decoded = 0U;
     enum lzma_stream_status st_out = LZMA_STREAM_OK;
     int done = 0;
@@ -50,15 +35,14 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
     LzmaDec_Construct(&dec);
     if (LzmaDec_AllocateProbs(&dec, lzma_props, LZMA_PROPS_SIZE,
                               &lzma_alloc_vt) != SZ_OK) {
-        return LZMA_STREAM_MEM; /* probs malloc failed */
+        return LZMA_STREAM_MEM;
     }
     dic = malloc(LZMA_STREAM_WIN_BYTES);
     if (dic == NULL) {
         LzmaDec_FreeProbs(&dec, &lzma_alloc_vt);
         return LZMA_STREAM_MEM;
     }
-    /* Manual dictionary (AllocateProbs variant): dic/dicBufSize/dicPos
-       are ours to set; LzmaDec_Init() resets the range coder only. */
+
     dec.dic = dic;
     dec.dicBufSize = LZMA_STREAM_WIN_BYTES;
     dec.dicPos = 0U;
@@ -79,9 +63,6 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
         src += in_used;
         src_len -= (uint32_t)in_used;
 
-        /* Whole words to the sink; a sub-word tail waits for more
-           decoded data (raw_len is word-aligned, so the end of the
-           stream lands on a word boundary too). */
         avail = (uint32_t)dec.dicPos - consumed;
         words = avail & ~3U;
         if (words != 0U) {
@@ -95,7 +76,7 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
         }
 
         if (st == LZMA_STATUS_FINISHED_WITH_MARK) {
-            done = 1; /* end marker: the stream is complete */
+            done = 1;
         } else if (st == LZMA_STATUS_NEEDS_MORE_INPUT) {
             if (src_len == 0U) {
                 st_out = LZMA_STREAM_TRUNCATED;
@@ -103,8 +84,7 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
             }
         } else if (st == LZMA_STATUS_NOT_FINISHED) {
             if (dec.dicPos == LZMA_STREAM_WIN_BYTES) {
-                /* Window full: keep the last DICT bytes (the longest
-                   match the encoder can emit) at the front, decode on. */
+
                 memmove(dic,
                         &dic[LZMA_STREAM_WIN_BYTES - LZMA_STREAM_DICT_BYTES],
                         LZMA_STREAM_DICT_BYTES);
@@ -114,14 +94,12 @@ enum lzma_stream_status lzma_decode_stream(const uint8_t *src, uint32_t src_len,
                 st_out = LZMA_STREAM_TRUNCATED;
                 break;
             } else {
-                /* Stopped with window space and input left: cannot
-                   happen - refuse instead of spinning. */
+
                 st_out = LZMA_STREAM_DATA;
                 break;
             }
         } else {
-            /* MAYBE_FINISHED_WITHOUT_MARK: our encoder always writes
-               the end marker, so this is a foreign or broken stream. */
+
             st_out = LZMA_STREAM_DATA;
             break;
         }

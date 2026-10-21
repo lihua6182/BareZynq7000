@@ -11,7 +11,7 @@ __ram_end__ = ORIGIN(RAM) + LENGTH(RAM);
 
 SECTIONS
 {
-    /* Zynq boot header (UG585 ch.6), must occupy [0, 0x8C0). */
+
     .boot_header ORIGIN(FLASH) :
     {
         __boot_header_start__ = .;
@@ -19,9 +19,6 @@ SECTIONS
         __boot_header_end__ = .;
     } > FLASH
 
-    /* VBAR: 8 ARM vectors + literal pool. 0x8C0 is already 32-byte aligned.
-       The IRQ slot still points at irq_handler; zynq_irq.c supplies the
-       strong definition that overrides the weak hang in zynq_startup.s. */
     .vectors ORIGIN(FLASH) + 0x8C0 :
     {
         __vectors_start__ = .;
@@ -60,8 +57,6 @@ SECTIONS
         __exidx_end = .;
     } > FLASH
 
-    /* preinit/init are called from zynq_startup.s; fini is never run
-       (main does not return) but GCC may still emit the section. */
     .init_array :
     {
         . = ALIGN(4);
@@ -86,14 +81,11 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
-    /* 32 B at VA 0: NULL writes and irq_attach(NULL) cannot land in .fast. */
     .null_guard (NOLOAD) :
     {
         . = . + 32;
     } > RAM
 
-    /* MMU table first (16 KB aligned; 0xFFFF0000 already is), then DMA RAM.
-       NOLOAD: startup zeros .no_cache_ram; mmu_init fills the table. */
     .no_cache_ram (NOLOAD) :
     {
         . = ALIGN(16384);
@@ -106,7 +98,6 @@ SECTIONS
         __no_cache_ram_end__ = .;
     } > NO_CACHE_RAM
 
-    /* Fast RAM code: VMA in OCM (after the NULL guard), LMA in QSPI. */
     .fast :
     {
         . = ALIGN(4);
@@ -141,18 +132,14 @@ SECTIONS
         _ebss = .;
     } > RAM
 
-    /* Stacks grow down from RAM top. SYS (main) and the SVC slot share the
-       same 1 KiB — _start sets SVC SP then switches to SYS with the same
-       top; SVC is unused after that. IRQ/UND/FIQ/ABT are separate. */
-    __stack_end__     = __ram_end__;           /* SYS / main */
-    __stack_svc_end__ = __ram_end__;           /* same 1 KiB, abandoned after mode switch */
+    __stack_end__     = __ram_end__;
+    __stack_svc_end__ = __ram_end__;
     __stack_irq_end__ = __ram_end__ - 0x400;
     __stack_und_end__ = __stack_irq_end__ - 0x400;
     __stack_fiq_end__ = __stack_und_end__ - 0x100;
     __stack_abt_end__ = __stack_fiq_end__ - 0x100;
     __stack_abt_start__ = __stack_abt_end__ - 0x100;
 
-    /* Heap: .bss up to the abort stack. LZMA boot decode ~38 KiB, then free. */
     __heap_start__ = ALIGN(_ebss, 8);
     __heap_end__   = __stack_abt_start__;
 

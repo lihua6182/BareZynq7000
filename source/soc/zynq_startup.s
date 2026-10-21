@@ -21,117 +21,94 @@ _vectors:
         .global reset_handler
         .type   reset_handler, function
 reset_handler:
-        // GIC is not up yet; mask IRQ/FIQ so an interrupt during the
-        // QSPI reconfiguration window cannot fetch from dead flash.
+
         cpsid   if
 
-        // Disable caches/MMU/BP in case an earlier run left them on;
-        // makes a debugger warm reset behave like a cold one.
-        mrc     p15, 0, r0, c1, c0, 0       /* CP15 System Control Register */
-        bic     r0, r0, #(0x1 << 12)        /* I: disable I cache            */
-        bic     r0, r0, #(0x1 <<  2)        /* C: disable D cache            */
-        bic     r0, r0, #(0x1 <<  0)        /* M: disable MMU                */
-        bic     r0, r0, #(0x1 << 11)        /* Z: disable branch prediction  */
-        bic     r0, r0, #(0x1 << 13)        /* V: low vector table           */
-        bic     r0, r0, #(0x1 << 28)        /* TRE: disable TEX remap        */
+        mrc     p15, 0, r0, c1, c0, 0
+        bic     r0, r0, #(0x1 << 12)
+        bic     r0, r0, #(0x1 <<  2)
+        bic     r0, r0, #(0x1 <<  0)
+        bic     r0, r0, #(0x1 << 11)
+        bic     r0, r0, #(0x1 << 13)
+        bic     r0, r0, #(0x1 << 28)
         mcr     p15, 0, r0, c1, c0, 0
         dsb     sy
         isb     sy
 
-        // L2 off while the MMU is off; re-enabled (prefetch off) by
-        // mmu_and_caches_enable(). reg1_control = L2C + 0x100, bit 0.
         ldr     r0, =0xF8F02100
         mov     r1, #0
         str     r1, [r0]
         dsb     sy
 
-        // Set the vector base address register to our vector table(VBAR)
         ldr     r0, =_vectors
         mcr     p15, 0, r0, c12, c0, 0
 
-
-        // Keep the BootROM OCM split (RAM_HI=1000): OCM0-2 at 0x0,
-        // OCM3 at 0xFFFF0000. RMW: bit 4 (SWAP) is write-as-read.
         ldr     r3, =0xF8000000
         movw    r2, #0xDF0D
-        str     r2, [r3, #0x008]            /* SLCR_UNLOCK                   */
-        ldr     r2, [r3, #0x910]            /* SLCR_OCM_CFG                  */
-        bic     r2, r2, #0xF                /* RAM_HI = 0, keep SWAP as read */
-        orr     r2, r2, #0x8                /* RAM_HI = 4'b1000: OCM3 high   */
+        str     r2, [r3, #0x008]
+        ldr     r2, [r3, #0x910]
+        bic     r2, r2, #0xF
+        orr     r2, r2, #0x8
         str     r2, [r3, #0x910]
         movw    r2, #0x767B
-        str     r2, [r3, #0x004]            /* SLCR_LOCK                     */
-
-        // Invalidate TLBs and the branch predictor array
+        str     r2, [r3, #0x004]
 
         mov     r0, #0
-        mcr     p15, 0, r0, c8, c7, 0       /* I-TLB and D-TLB invalidation  */
-        mcr     p15, 0, r0, c7, c5, 6       /* BPIALL                        */
+        mcr     p15, 0, r0, c8, c7, 0
+        mcr     p15, 0, r0, c7, c5, 6
 
-        // Invalidate the L1 caches (Cortex-A9, cache level walk)
+        mrc     p15, 1, r0, c0, c0, 1
+        tst     r0, #0x3
+        mov     r0, #0
+        mcrne   p15, 0, r0, c7, c5, 0
 
-        // Invalidate L1 instruction cache
-        mrc     p15, 1, r0, c0, c0, 1       /* CLIDR                         */
-        tst     r0, #0x3                    /* Harvard cache?                */
-        mov     r0, #0                      /* SBZ                           */
-        mcrne   p15, 0, r0, c7, c5, 0       /* ICIALLU                       */
+        mrc     p15, 1, r0, c0, c0, 1
+        ands    r3, r0, #0x07000000
+        mov     r3, r3, lsr #23
+        beq     Finished
 
-        // Invalidate data / unified caches 
-        mrc     p15, 1, r0, c0, c0, 1       /* CLIDR                         */
-        ands    r3, r0, #0x07000000         /* Extract coherency level       */
-        mov     r3, r3, lsr #23             /* Total cache levels << 1       */
-        beq     Finished                    /* If 0, nothing to clean        */
-
-        mov     r10, #0                     /* Current cache level << 1      */
-Loop1:  add     r2, r10, r10, lsr #1        /* R2 = cache "Set" position     */
-        mov     r1, r0, lsr r2              /* Bottom 3 bits: cache type     */
+        mov     r10, #0
+Loop1:  add     r2, r10, r10, lsr #1
+        mov     r1, r0, lsr r2
         and     r1, r1, #7
         cmp     r1, #2
-        blt     Skip                        /* No cache, or I cache only     */
+        blt     Skip
 
-        mcr     p15, 2, r10, c0, c0, 0      /* Select cache level            */
+        mcr     p15, 2, r10, c0, c0, 0
         isb
-        mrc     p15, 1, r1, c0, c0, 0       /* Cache Size ID                 */
-        and     r2, r1, #7                  /* Line length field             */
-        add     r2, r2, #4                  /* +4 for the log2(16) offset    */
+        mrc     p15, 1, r1, c0, c0, 0
+        and     r2, r1, #7
+        add     r2, r2, #4
         ldr     r4, =0x3FF
-        ands    r4, r4, r1, lsr #3          /* Max way size (right aligned)  */
-        clz     r5, r4                      /* Bit position of way increment */
+        ands    r4, r4, r1, lsr #3
+        clz     r5, r4
         ldr     r7, =0x7FFF
-        ands    r7, r7, r1, lsr #13         /* Max index size (right aligned)*/
+        ands    r7, r7, r1, lsr #13
 
-Loop2:  mov     r9, r4                      /* Working copy of max way size  */
-Loop3:  orr     r11, r10, r9, lsl r5        /* Way number and cache number   */
-        orr     r11, r11, r7, lsl r2        /* Set number                    */
-        mcr     p15, 0, r11, c7, c6, 2      /* Invalidate by set/way         */
+Loop2:  mov     r9, r4
+Loop3:  orr     r11, r10, r9, lsl r5
+        orr     r11, r11, r7, lsl r2
+        mcr     p15, 0, r11, c7, c6, 2
         subs    r9, r9, #1
         bge     Loop3
         subs    r7, r7, #1
         bge     Loop2
-Skip:   add     r10, r10, #2                /* Next cache level              */
+Skip:   add     r10, r10, #2
         cmp     r3, r10
         bgt     Loop1
 Finished:
-
-        // MMU: use translation table base register 0. The table itself is
-        // built later in soc_init(), once we are past the point
-        // where variables may be used.
 
         mov     r0, #0
         mcr     p15, 0, r0, c2, c0, 2
 
 #if !defined(__SOFTFP__)
 
-        // Enable the VFP/NEON unit (hard-float builds only)
-
         mrc     p15, 0, r0, c1, c0, 2
-        orr     r0, r0, #(0xF << 20)        /* Kernel+user access to cp10/11 */
+        orr     r0, r0, #(0xF << 20)
         mcr     p15, 0, r0, c1, c0, 2
-        mov     r0, #(1 << 30)              /* EN: enable VFP and NEON       */
+        mov     r0, #(1 << 30)
         vmsr    FPEXC, r0
 #endif
-
-        // Jump to the runtime initialisation, which calls main().
 
         b       _start
 
@@ -147,37 +124,37 @@ _start:
         mrs     r0, cpsr
         bic     r0, r0, #0x1F
 
-        orr     r1, r0, #0x1B                   /* Undefined mode              */
+        orr     r1, r0, #0x1B
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_und_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x17                   /* Abort mode                  */
+        orr     r1, r0, #0x17
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_abt_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x12                   /* IRQ mode                    */
+        orr     r1, r0, #0x12
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_irq_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x11                   /* FIQ mode                    */
+        orr     r1, r0, #0x11
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_fiq_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x13                   /* Supervisor mode             */
+        orr     r1, r0, #0x13
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_svc_end__
         bic     sp, sp, #0x7
 
-        orr     r1, r0, #0x1F                   /* System mode (main); 1 KiB at RAM top, shared with the unused SVC slot */
+        orr     r1, r0, #0x1F
         msr     cpsr_cxsf, r1
         ldr     sp, =__stack_end__
         bic     sp, sp, #0x7
 
-        ldr     r0, =__fast_start__             /* Copy fast section            */
+        ldr     r0, =__fast_start__
         ldr     r1, =__fast_end__
         ldr     r2, =__fast_load__
         b       .Lfast_test
@@ -188,7 +165,7 @@ _start:
         cmp     r0, r1
         blo     .Lfast_copy
 
-        ldr     r0, =_sdata                     /* Copy data section            */
+        ldr     r0, =_sdata
         ldr     r1, =_edata
         ldr     r2, =_sidata
         b       .Ldata_test
@@ -199,7 +176,7 @@ _start:
         cmp     r0, r1
         blo     .Ldata_copy
 
-        ldr     r0, =_sbss                      /* Fill bss section as zero     */
+        ldr     r0, =_sbss
         ldr     r1, =_ebss
         mov     r2, #0
         b       .Lbss_test
@@ -209,7 +186,7 @@ _start:
         cmp     r0, r1
         blo     .Lbss_zero
 
-        ldr     r0, =__no_cache_ram_start__     /* DMA RAM; mmu_table is separate */
+        ldr     r0, =__no_cache_ram_start__
         ldr     r1, =__no_cache_ram_end__
         mov     r2, #0
         b       .Lnc_test
@@ -219,7 +196,6 @@ _start:
         cmp     r0, r1
         blo     .Lnc_zero
 
-        /* .fast (PLL+QSPI reconfig) must be in OCM before soc_init. */
         bl      soc_init
 
         ldr     r4, =__preinit_array_start
@@ -248,7 +224,6 @@ _start:
 
         .pool
 
-        // Default exception handlers
         .section .init, "ax"
         .code 32
         .balign 4
@@ -275,10 +250,10 @@ dabort_handler:
 
         .weak   irq_handler
         .type   irq_handler, function
-irq_handler:                     /* overridden by zynq_irq.c (dispatcher) */
+irq_handler:
         b       irq_handler
 
         .weak   fiq_handler
         .type   fiq_handler, function
-fiq_handler:                     /* nothing routes to FIQ; hang if it fires */
+fiq_handler:
         b       fiq_handler

@@ -2,26 +2,6 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Convert PL bitstream",
-            "type": "process",
-            "command": "python",
-            "args": [
-                "${workspaceFolder}/tools/convert_bitstream.py",
-                "${workspaceFolder}/source/board/bitstream.bin",
-                "${workspaceFolder}/source/board/board_pl_bitstream.c",
-                "${workspaceFolder}/source/board/board_pl_bitstream.h"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "problemMatcher": []
-        },
-        {
             "label": "Flash (J-Link QSPI XIP)",
             "type": "shell",
             "command": "(echo loadfile ${input:flashHex}& echo w4 0xF8000008 0xDF0D& echo w4 0xF8000200 0x1& echo Sleep 200& echo qc) | \"C:\\Program Files\\SEGGER\\JLink_V956\\JLink.exe\" -device XC7Z010 -if JTAG -speed 8000 -jtagconf 6,1 -autoconnect 1",
@@ -52,12 +32,10 @@
             "type": "pickString",
             "description": "选择要烧写的镜像 (build 产物)",
             "options": [
-                "build/source/app/app.hex",
-                "build/source/tests/dma_test/dma_test.hex",
-                "build/source/tests/ppc_stress/ppc_stress.hex",
-                "build/source/tests/swd_test/swd_test.hex"
+                "build/release/source/app/app.hex",
+                "build/debug/source/app/app.hex"
             ],
-            "default": "build/source/app/app.hex"
+            "default": "build/release/source/app/app.hex"
         }
     ]
 }

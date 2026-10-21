@@ -1,31 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a 7-series Zynq bitstream into the C array consumed by board_init()
-(source/board/board.c).
-
-  1. Convert to PCAP word order: Vivado 'write_bitstream -bin' emits
-     big-endian words (sync bytes AA 99 55 66); the DevC/PCAP path wants
-     little-endian (66 55 99 AA) - the "byte swapped .bin" of the
-     kernel's zynq-fpga driver.
-  2. Compress with raw LZMA1 (liblzma FORMAT_RAW): lc=0 lp=0 pb=0,
-     8 KB dictionary, end marker. Firmware decoder:
-     source/middleware/lzma/ (public-domain LZMA SDK LzmaDec + streaming
-     wrapper), params hardcoded to match LZMA_PROPS below. The payload is
-     roundtrip-verified in this script before anything is emitted.
-  3. Prepend a 16-byte LE header: 4-byte magic "ZBLZ" (also the load-path
-     selector - bitgen images start with 0xFFFFFFFF padding), raw_len,
-     packed_len, CRC-32 (EDB88320) over the raw image.
-  4. Emit board_pl_bitstream.c/board_pl_bitstream.h defining the
-     packed image as a 64-byte-aligned const array (pl_img[]). The pair
-     is data only - the code that consumes it is board_pl.c.
-
-Usage:
-  convert_bitstream.py <bitstream.bin> <out.c> <out.h>
-  convert_bitstream.py --stub <out.c> <out.h>     no-bitstream stub
-                                                   (target reports
-                                                   PL_NO_IMAGE)
-
-Exits non-zero (with a message) on any input problem.
-"""
+"""Pack a 7-series Zynq bitstream for the ZBLZ loader."""
 
 import argparse
 import lzma
@@ -34,18 +8,16 @@ import struct
 import sys
 import zlib
 
-SYNC_BE = b"\xAA\x99\x55\x66"  # bitgen native word order
-SYNC_LE = b"\x66\x55\x99\xAA"  # PCAP word order (what we must produce)
-SYNC_SCAN = 128  # sync word sits inside this window in every bitgen layout
-PER_LINE = 16  # array bytes per source line
+SYNC_BE = b"\xAA\x99\x55\x66"
+SYNC_LE = b"\x66\x55\x99\xAA"
+SYNC_SCAN = 128
+PER_LINE = 16
 
-# LZMA1 encoder params - a contract with source/middleware/lzma/lzma_stream.h
-# (LZMA_STREAM_* must stay in lockstep). End marker is written.
 LZMA_FILTERS = [{"id": lzma.FILTER_LZMA1, "preset": 9 | lzma.PRESET_EXTREME,
                  "lc": 0, "lp": 0, "pb": 0, "dict_size": 8192}]
 
-MAGIC_LZMA = 0x5A4C425A  # file bytes read "ZBLZ"
-HDR_FMT = "<IIII"  # magic, raw_len, packed_len, crc32
+MAGIC_LZMA = 0x5A4C425A
+HDR_FMT = "<IIII"
 
 
 def fail(msg: str) -> "NoReturn":  # type: ignore[valid-type]
@@ -54,7 +26,7 @@ def fail(msg: str) -> "NoReturn":  # type: ignore[valid-type]
 
 
 def write_pair(out_c: str, out_h: str, c_body: str, c_comment: str, h_comment: str,
-               length: int, c_decl: str) -> None:
+               length: int) -> None:
     name_c = os.path.basename(out_c)
     name_h = os.path.basename(out_h)
     guard = name_h.upper().replace(".", "_")
@@ -74,7 +46,7 @@ extern const uint8_t pl_img[];
 
 #define PL_IMG_LEN {length}u
 
-#endif /* {guard} */
+#endif
 """)
     with open(out_c, "w", newline="\n", encoding="ascii") as f:
         f.write(f"""/**
@@ -85,20 +57,9 @@ extern const uint8_t pl_img[];
  */
 #include "{name_h}"
 
-const uint8_t pl_img{c_decl} __attribute__((aligned(64))) = {{
+const uint8_t pl_img[PL_IMG_LEN] __attribute__((aligned(64))) = {{
 {c_body}}};
 """)
-
-
-def emit_stub(out_c: str, out_h: str) -> None:
-    """Empty image: PL_IMG_LEN == 0 makes board_init() skip programming
-    and report PL_NO_IMAGE. The definition carries one placeholder
-    byte so C never sees a zero-size array."""
-    comment = "Stub: this build embeds no PL bitstream (--stub conversion)."
-    comment_c = (f"{comment}\n"
-                 f" * The zero length makes board_init() skip programming.")
-    write_pair(out_c, out_h, "    0x00,\n", comment_c, comment, 0, "[1]")
-    print("convert_bitstream.py: stub pair written (no bitstream in this build)")
 
 
 def to_pcap_form(raw: bytes, name: str) -> bytes:
@@ -129,20 +90,10 @@ def lzma_encode(data: bytes) -> bytes:
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Pack a 7-series Zynq bitstream for the ZBLZ loader.")
-    ap.add_argument("--stub", action="store_true",
-                    help="emit the no-bitstream stub pair")
-    ap.add_argument("bitstream", nargs="?", help="input .bin (Vivado or PCAP order)")
+    ap.add_argument("bitstream", help="input .bin (Vivado or PCAP order)")
     ap.add_argument("out_c")
     ap.add_argument("out_h")
     args = ap.parse_args()
-
-    if args.stub:
-        if args.bitstream is not None:
-            ap.error("--stub takes no bitstream input")
-        emit_stub(args.out_c, args.out_h)
-        return
-    if args.bitstream is None:
-        ap.error("bitstream input required (or --stub)")
 
     with open(args.bitstream, "rb") as f:
         raw = f.read()
@@ -151,9 +102,6 @@ def main() -> None:
     hdr = struct.pack(HDR_FMT, MAGIC_LZMA, len(pcap), len(packed),
                       zlib.crc32(pcap) & 0xFFFFFFFF)
     image = hdr + packed
-    # pl_load_image() requires a whole-word image length; the pad bytes sit
-    # past packed_len, which the decoder never reads (payload_end comes from
-    # the header).
     image += b"\x00" * (-len(image) % 4)
 
     lines = []
@@ -169,7 +117,7 @@ def main() -> None:
                  f" *   packed  {len(hdr)}-byte header + {len(packed)}-byte payload = {len(image)} bytes ({len(pcap) / len(image):.1f}:1)\n"
                  f" *   crc32 of the unpacked image: 0x{zlib.crc32(pcap) & 0xFFFFFFFF:08X}")
     comment_h = f"Packed PL bitstream ({len(image)} bytes, ZBLZ format)."
-    write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image), "[PL_IMG_LEN]")
+    write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image))
 
     print(f"convert_bitstream.py: {len(pcap)} -> {len(image)} bytes "
           f"({len(pcap) / len(image):.1f}:1) -> {args.out_c}")

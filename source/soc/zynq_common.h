@@ -4,10 +4,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "zynq_cmsis.h"
+static inline void dsb(void)
+{
+    asm volatile("dsb" ::: "memory");
+}
 
-/* The only hard-coded frequency in the system: the crystal feeding PS_CLK. */
-#define PS_CLK_HZ (33333000UL) /* 33.333 MHz */
+static inline void isb(void)
+{
+    asm volatile("isb" ::: "memory");
+}
+
+static inline void dmb(void)
+{
+    asm volatile("dmb" ::: "memory");
+}
+
+#define PS_CLK_HZ (33333000UL)
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

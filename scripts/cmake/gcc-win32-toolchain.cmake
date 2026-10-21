@@ -3,15 +3,13 @@ set(CMAKE_SYSTEM_PROCESSOR i686)
 
 set(TOOLCHAIN_PREFIX "i686-w64-mingw32-")
 
-# Toolchain location comes from the SDK_TOOLCHAIN_PATH environment variable.
 if(DEFINED ENV{SDK_TOOLCHAIN_PATH} AND NOT "$ENV{SDK_TOOLCHAIN_PATH}" STREQUAL "")
     set(SDK_TOOLCHAIN_PATH "$ENV{SDK_TOOLCHAIN_PATH}")
 else()
-    # Default path
+
     set(SDK_TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../toolchain/mingw-w64-gcc/bin")
 endif()
 
-# Get the absolute path of the toolchain directory
 get_filename_component(SDK_TOOLCHAIN_PATH "${SDK_TOOLCHAIN_PATH}" ABSOLUTE)
 
 if(NOT EXISTS "${SDK_TOOLCHAIN_PATH}/i686-w64-mingw32-gcc.exe")

@@ -1,50 +1,44 @@
-project("board" C)
 
-# Board stage: sits between the soc stage (soc_init) and the
-# application.
-#
-#   board.c                 board_init(): PL, fabric clock, PL resets;
-#                           console/LED pin mux and the newlib console binding
-#   board_usb.c             USB0 board wiring: ULPI pin mux, USB3300 PHY
-#                           reset, clock routing, GIC - implements the
-#                           CherryUSB usb_dc_low_level_init()/deinit() hooks
-#   board_pl.c/h          the PL itself: DevC/PCAP configuration plus
-#                           the control plane (resets, level shifters,
-#                           status) - code, hand-written
-#   board_pl_bitstream.*  the PL image - generated data, produced by
-#                           the VSCode task "Convert PL bitstream"
-#                           (tools/convert_bitstream.py) from bitstream.bin
-#                           in this folder
-#
-# The image and the code that loads it are deliberately separate files:
-# a bitstream swap regenerates only the data pair. The app target
-# compiles every source; this subdirectory only exports the include path.
-add_library("board" INTERFACE)
+add_library(board INTERFACE)
 
-target_sources("board"
+target_sources(board
     INTERFACE
-    "board.c"
-    "board_usb.c"
-    "board_pl.c"
-    "board_pl_bitstream.c"
+    board.c
+    board_pl.c
 )
 
-target_include_directories("board"
+target_include_directories(board
     INTERFACE
-    "."
+    .
 )
 
-target_link_libraries("board" 
+target_link_libraries(board
     INTERFACE
-    "soc"
-    "driver"
-    "lzma"
+    soc
+    driver
+    lzma
 )
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/board_pl_bitstream.c")
-    message(FATAL_ERROR
-        "board_pl_bitstream.c is missing - run the VSCode task "
-        "\"Convert PL bitstream\" (or: python tools/convert_bitstream.py "
-        "source/board/bitstream.bin source/board/board_pl_bitstream.c "
-        "source/board/board_pl_bitstream.h)")
-endif()
+function(board_add_pl_image target)
+    find_program(PYTHON_EXECUTABLE NAMES py python3 python)
+
+    set(bitstream "${PROJECT_SOURCE_DIR}/source/board/bitstream.bin")
+    if(ARGC GREATER 1)
+        set(bitstream "${ARGV1}")
+    endif()
+
+    set(image "${CMAKE_CURRENT_BINARY_DIR}/board_pl_bitstream.c")
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/board_pl_bitstream.h")
+
+    add_custom_command(
+        OUTPUT "${image}" "${header}"
+        COMMAND "${PYTHON_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/convert_bitstream.py" "${bitstream}" "${image}"
+                "${header}"
+        DEPENDS "${bitstream}" "${PROJECT_SOURCE_DIR}/tools/convert_bitstream.py"
+        COMMENT "Packing PL bitstream"
+        VERBATIM
+    )
+
+    target_sources(${target} PRIVATE "${image}")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+endfunction()

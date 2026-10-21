@@ -23,7 +23,7 @@
         {
             "name": "BareZynq7000-Debug",
             "inherits": "gcc_arm_base",
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build/debug",
             "toolchainFile": "./scripts/cmake/gcc-arm-ca9.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
@@ -32,11 +32,21 @@
         {
             "name": "BareZynq7000-Release",
             "inherits": "gcc_arm_base",
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build/release",
             "toolchainFile": "./scripts/cmake/gcc-arm-ca9.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "BareZynq7000-Debug",
+            "configurePreset": "BareZynq7000-Debug"
+        },
+        {
+            "name": "BareZynq7000-Release",
+            "configurePreset": "BareZynq7000-Release"
         }
     ]
 }

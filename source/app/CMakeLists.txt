@@ -1,22 +1,29 @@
-project("app" C ASM)
+add_executable(app)
 
-add_executable("app")
-
-set(SDK_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/linker/flash_xip.ld")
-
-target_sources("app"
+target_sources(app
     PRIVATE
-    "main.c"
-    "syscalls.c"
-    "sysmem.c"
+    main.c
+    syscalls.c
+    sysmem.c
 )
 
-target_link_libraries("app"
+target_compile_features(app PRIVATE c_std_23)
+
+target_link_libraries(app
     PRIVATE
-    "board"
-    "driver"
-    "cherryusb"
+    board
 )
 
-function_gcc_arm_gen_binary("app")
-function_validate_boot_header("app")
+target_compile_definitions(app PRIVATE BOARD_PL_ENABLE=0)
+
+set_source_files_properties(
+    ../middleware/lzma/sdk/LzmaDec.c
+    PROPERTIES
+    COMPILE_OPTIONS -Wno-pedantic
+)
+
+function_gcc_arm_gen_binary(
+    app
+    "${PROJECT_SOURCE_DIR}/scripts/linker/flash_xip.ld"
+)
+function_validate_boot_header(app)
