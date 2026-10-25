@@ -1,49 +1,55 @@
-import serial
+#!/usr/bin/env python3
+"""Measure USB CDC throughput over a serial port."""
+
+from __future__ import annotations
+
+import sys
 import time
-try:
-    from serial.tools.list_ports import comports
-except ImportError:
-    raise serial.serialutil.SerialException
+
+import serial
+
+PORT = "COM12"
+BAUD_RATE = 2_000_000
+MAX_BYTES = 10 * 1024 * 1024
+CHUNK = b"0xAA" * 4096
 
 
-test_comx = 'COM12'
-test_baudrate = 2000000
-test_maxsize = 10*1024*1024
+def measure_out(port: serial.Serial) -> float:
+    sent = 0
+    start = time.monotonic()
+    while sent < MAX_BYTES:
+        sent += port.write(CHUNK)
+    return sent / (time.monotonic() - start) / (1024 * 1024)
 
-test_data = '0xAA' * 4096
 
-test_serial = serial.Serial(test_comx, test_baudrate, timeout = 1)
+def measure_in(port: serial.Serial) -> float:
+    received = 0
+    start = time.monotonic()
+    while received < MAX_BYTES:
+        chunk = port.read(MAX_BYTES)
+        if not chunk:
+            break
+        received += len(chunk)
+    return received / (time.monotonic() - start) / (1024 * 1024)
 
-def test_cdc_out():
-    send_count = 0
-    begin = time.time()
 
-    while True:
-            if send_count < test_maxsize:
-                txdatalen = test_serial.write(test_data.encode("utf-8"))
-                send_count += txdatalen
-            else:
-                print("cdc out speed %f MB/s" %(send_count//1024//1024/(time.time() - begin)))
-                break
+def main() -> int:
+    try:
+        port = serial.Serial(PORT, BAUD_RATE, timeout=1)
+    except serial.SerialException as exc:
+        print(f"cannot open {PORT}: {exc}", file=sys.stderr)
+        return 1
 
-def test_cdc_in():
-    read_count = 0
-    begin = time.time()
+    with port:
+        print("test cdc out speed")
+        port.setDTR(0)
+        print(f"cdc out speed {measure_out(port):.3f} MB/s")
 
-    while True:
-            if read_count < test_maxsize:
-                data = test_serial.read(test_maxsize).decode(encoding='utf-8',errors='ignore')
-                read_count += len(data)
-            else:
-                print("cdc in speed %f MB/s" %(read_count//1024//1024/(time.time() - begin)))
-                break
+        print("test cdc in speed")
+        port.setDTR(1)
+        print(f"cdc in speed {measure_in(port):.3f} MB/s")
+    return 0
 
-if __name__ == '__main__':
-    print('test cdc out speed')
 
-    test_serial.setDTR(0)
-    test_cdc_out()
-
-    print('test cdc in speed')
-    test_serial.setDTR(1)
-    test_cdc_in()
+if __name__ == "__main__":
+    raise SystemExit(main())

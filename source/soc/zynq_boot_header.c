@@ -1,5 +1,5 @@
-#include <stdint.h>
 #include <assert.h>
+#include <stdint.h>
 
 #include "zynq_soc.h"
 
@@ -32,13 +32,9 @@ struct boot_header
 
 static_assert(sizeof(struct boot_header) == 0x8C0, "boot header must occupy the full 0x8C0 BootROM header window");
 
-#if defined(__GNUC__)
-const struct boot_header boot_header __attribute__((section(".boot_header")));
-#else
-#error "boot_header could not be placed in .boot_header section"
-#endif
-
-const struct boot_header boot_header = {
+/* BootROM header: the exception table here is inert (VBAR points at .vectors),
+   the rest is what the BootROM checks before it hands over to _start. */
+const struct boot_header boot_header __attribute__((section(".boot_header"))) = {
     .arm_vector_table = {0xEAFFFFFE, 0xEAFFFFFE, 0xEAFFFFFE, 0xEAFFFFFE, 0xEAFFFFFE, 0xEAFFFFFE, 0xEAFFFFFE,
                          0xEAFFFFFE},
     .width_detection_word = 0xAA995566,

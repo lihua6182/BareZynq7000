@@ -1,0 +1,3 @@
+# Vendored third-party code, kept at upstream formatting.
+source/middleware/cherryusb/**
+source/middleware/lzma/sdk/**

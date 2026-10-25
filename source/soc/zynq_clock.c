@@ -4,7 +4,7 @@ static uint32_t pll_freq_from_ctrl(uint32_t ctrl)
 {
     uint32_t fdiv = (ctrl >> 12) & 0x7FU;
 
-    if (fdiv == 0U || (ctrl & (1UL << 4)) != 0U)
+    if (fdiv == 0U || (ctrl & (1U << 4)) != 0U)
     {
         return PS_CLK_HZ;
     }
@@ -71,11 +71,11 @@ void clock_freqs_get(struct clock_freqs *freqs)
     ctrl = slcr->arm_clk_ctrl;
     freqs->cpu = cpu_src_freq((ctrl >> 4) & 0x3U, freqs) / divisor_from_field(ctrl, 8U);
 
-    ratio_621 = slcr->clk_621_true & 1UL;
+    ratio_621 = slcr->clk_621_true & 1U;
     freqs->cpu_6x4x = freqs->cpu;
-    freqs->cpu_3x2x = freqs->cpu / 2UL;
-    freqs->cpu_2x = freqs->cpu / (2UL + ratio_621);
-    freqs->cpu_1x = freqs->cpu / (4UL + 2UL * ratio_621);
+    freqs->cpu_3x2x = freqs->cpu / 2U;
+    freqs->cpu_2x = freqs->cpu / (2U + ratio_621);
+    freqs->cpu_1x = freqs->cpu / (4U + 2U * ratio_621);
 
     ctrl = slcr->ddr_clk_ctrl;
     freqs->ddr_2x = freqs->ddr_pll / divisor_from_field(ctrl, 26U);
@@ -119,7 +119,7 @@ bool clock_fclk_config(enum fclk fclk, enum fclk_src src, uint32_t div0, uint32_
     volatile uint32_t *clk_ctrl;
     uint32_t value;
 
-    if (((uint32_t)fclk > 3U) || ((src != FCLK_SRC_IO) && (src != FCLK_SRC_ARM) && (src != FCLK_SRC_DDR)) ||
+    if (((uint32_t)fclk > 3U) || ((src != fclk_src_io) && (src != fclk_src_arm) && (src != fclk_src_ddr)) ||
         (div0 == 0U) || (div0 > 63U) || (div1 == 0U) || (div1 > 63U))
     {
         return false;
@@ -128,8 +128,8 @@ bool clock_fclk_config(enum fclk fclk, enum fclk_src src, uint32_t div0, uint32_
     clk_ctrl = fclk_reg((uint32_t)fclk);
 
     slcr->unlock = SLCR_UNLOCK_KEY;
-    value = *clk_ctrl & ~((0x3FUL << 8) | (0x3FUL << 20) | (0x3UL << 4) | 0x1UL);
-    value |= (div0 << 8) | (div1 << 20) | ((uint32_t)src << 4) | (enable ? 0x1UL : 0x0UL);
+    value = *clk_ctrl & ~((0x3FU << 8) | (0x3FU << 20) | (0x3U << 4) | 0x1U);
+    value |= (div0 << 8) | (div1 << 20) | ((uint32_t)src << 4) | (enable ? 0x1U : 0x0U);
     *clk_ctrl = value;
     slcr->lock = SLCR_LOCK_KEY;
 
@@ -148,10 +148,10 @@ void clock_fclk_enable(enum fclk fclk, bool enable)
     clk_ctrl = fclk_reg((uint32_t)fclk);
 
     slcr->unlock = SLCR_UNLOCK_KEY;
-    value = *clk_ctrl & ~0x1UL;
+    value = *clk_ctrl & ~0x1U;
     if (enable)
     {
-        value |= 0x1UL;
+        value |= 0x1U;
     }
     *clk_ctrl = value;
     slcr->lock = SLCR_LOCK_KEY;
@@ -167,7 +167,7 @@ uint32_t clock_fclk_freq_get(enum fclk fclk)
         return 0U;
     }
     clk_ctrl = fclk_reg((uint32_t)fclk);
-    if ((*clk_ctrl & 0x1UL) == 0U)
+    if ((*clk_ctrl & 0x1U) == 0U)
     {
         return 0U;
     }

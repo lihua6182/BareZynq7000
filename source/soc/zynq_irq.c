@@ -52,30 +52,25 @@ static void gicd_write_byte(volatile uint32_t *reg, uint32_t id, uint8_t value)
 {
     uint32_t shift = (id % 4U) * 8U;
 
-    *reg = (*reg & ~(0xFFUL << shift)) | ((uint32_t)value << shift);
+    *reg = (*reg & ~(0xFFU << shift)) | ((uint32_t)value << shift);
 }
 
 void irq_init(void)
 {
-    uint32_t i;
-
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->a9_cpu_rst_ctrl |= (1UL << 8);
-    for (i = 0U; i < 100U; i++)
-    {
-        asm volatile("nop");
-    }
-    slcr->a9_cpu_rst_ctrl &= ~(1UL << 8);
+    slcr->a9_cpu_rst_ctrl |= (1U << 8);
+    delay_loops(100U);
+    slcr->a9_cpu_rst_ctrl &= ~(1U << 8);
     slcr->lock = SLCR_LOCK_KEY;
 
-    gicd->ctlr &= ~1UL;
-    gicc->ctlr &= ~1UL;
+    gicd->ctlr &= ~1U;
+    gicc->ctlr &= ~1U;
 
     gicc->pmr = 0xFFU;
 
-    gicd->ctlr |= 1UL;
+    gicd->ctlr |= 1U;
 
-    gicc->ctlr = (1UL << 0) | (1UL << 1) | (1UL << 2);
+    gicc->ctlr = (1U << 0) | (1U << 1) | (1U << 2);
 
     asm volatile("cpsie i" ::: "memory");
 }
@@ -87,13 +82,13 @@ void irq_enable(uint32_t id)
         return;
     }
 
-    gicd->igroupr[id / 32U] &= ~(1UL << (id % 32U));
+    gicd->igroupr[id / 32U] &= ~(1U << (id % 32U));
     gicd_write_byte(&gicd->ipriorityr[id / 4U], id, IRQ_DEFAULT_PRIORITY);
     if (id >= 32U)
     {
         gicd_write_byte(&gicd->itargetsr[id / 4U], id, 1U);
     }
-    gicd->isenabler[id / 32U] = 1UL << (id % 32U);
+    gicd->isenabler[id / 32U] = 1U << (id % 32U);
 }
 
 void irq_disable(uint32_t id)
@@ -102,5 +97,5 @@ void irq_disable(uint32_t id)
     {
         return;
     }
-    gicd->icenabler[id / 32U] = 1UL << (id % 32U);
+    gicd->icenabler[id / 32U] = 1U << (id % 32U);
 }

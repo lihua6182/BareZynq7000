@@ -1,5 +1,6 @@
-
 add_library(board INTERFACE)
+
+# board_usb.c is intentionally left out until the USB device stack is linked.
 
 target_sources(board
     INTERFACE
@@ -19,26 +20,10 @@ target_link_libraries(board
     lzma
 )
 
-function(board_add_pl_image target)
-    find_program(PYTHON_EXECUTABLE NAMES py python3 python)
-
-    set(bitstream "${PROJECT_SOURCE_DIR}/source/board/bitstream.bin")
-    if(ARGC GREATER 1)
-        set(bitstream "${ARGV1}")
-    endif()
-
-    set(image "${CMAKE_CURRENT_BINARY_DIR}/board_pl_bitstream.c")
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/board_pl_bitstream.h")
-
-    add_custom_command(
-        OUTPUT "${image}" "${header}"
-        COMMAND "${PYTHON_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/convert_bitstream.py" "${bitstream}" "${image}"
-                "${header}"
-        DEPENDS "${bitstream}" "${PROJECT_SOURCE_DIR}/tools/convert_bitstream.py"
-        COMMENT "Packing PL bitstream"
-        VERBATIM
-    )
-
-    target_sources(${target} PRIVATE "${image}")
-    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-endfunction()
+# board_pl_bitstream.c is pre-generated from bitstream.bin by running the VSCode
+# task "Convert Bitstream (ZBLZ pack)" (tools/convert_bitstream.py); the build
+# itself never packs the bitstream. CMake only picks the file up at configure
+# time, so re-run the configure step after (re)generating it.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/board_pl_bitstream.c")
+    target_sources(board INTERFACE board_pl_bitstream.c)
+endif()

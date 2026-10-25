@@ -1,4 +1,3 @@
-
 set(FUNCTION_VALIDATE_BOOT_HEADER_FILE "${CMAKE_CURRENT_LIST_DIR}/function_validate_boot_header.cmake")
 
 function(boot_header_validate bin_file)
@@ -6,10 +5,9 @@ function(boot_header_validate bin_file)
         message(FATAL_ERROR "Boot header check: image not found: ${bin_file}")
     endif()
 
-    file(READ "${bin_file}" image HEX)
+    file(SIZE "${bin_file}" size)
+    file(READ "${bin_file}" image HEX LIMIT 80)
     string(TOUPPER "${image}" image)
-    string(LENGTH "${image}" hexlen)
-    math(EXPR size "${hexlen} / 2")
     math(EXPR header_size "0x8C0")
     math(EXPR exec_lo "0xFC000000 + 0x8C0")
     math(EXPR exec_hi "0xFC000000 + 16 * 1024 * 1024")

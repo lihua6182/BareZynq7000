@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stddef.h>
 #include <stdint.h>
 
 extern uint32_t __heap_start__;
@@ -9,7 +10,7 @@ void *_sbrk(ptrdiff_t incr)
     static uint8_t *heap_end;
     uint8_t *prev;
 
-    if (heap_end == 0)
+    if (heap_end == NULL)
     {
         heap_end = (uint8_t *)&__heap_start__;
     }

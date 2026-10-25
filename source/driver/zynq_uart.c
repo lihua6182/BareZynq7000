@@ -1,16 +1,15 @@
-
 #include "zynq_uart.h"
 
 #include <stddef.h>
 
 #include "zynq_clock.h"
 
-#define UART0_CLK_GATE_BIT (1UL << 20)
-#define UART1_CLK_GATE_BIT (1UL << 21)
+#define UART0_CLK_GATE_BIT (1U << 20)
+#define UART1_CLK_GATE_BIT (1U << 21)
 
-static int find_baud_divisors(uint32_t ref_hz, uint32_t baud, uint32_t *baudgen, uint32_t *bauddiv)
+static int uart_find_baud_divisors(uint32_t ref_hz, uint32_t baud, uint32_t *baudgen, uint32_t *bauddiv)
 {
-    uint32_t best_err = 0xFFFFFFFFUL;
+    uint32_t best_err = 0xFFFFFFFFU;
     uint32_t div;
     uint32_t gen;
     uint32_t denominator;
@@ -21,7 +20,7 @@ static int find_baud_divisors(uint32_t ref_hz, uint32_t baud, uint32_t *baudgen,
     {
         denominator = baud * (div + 1U);
         gen = (ref_hz + denominator / 2U) / denominator;
-        if ((gen == 0U) || (gen > 0xFFFFUL))
+        if ((gen == 0U) || (gen > 0xFFFFU))
         {
             continue;
         }
@@ -34,7 +33,7 @@ static int find_baud_divisors(uint32_t ref_hz, uint32_t baud, uint32_t *baudgen,
             *bauddiv = div;
         }
     }
-    return (best_err == 0xFFFFFFFFUL) ? -1 : 0;
+    return (best_err == 0xFFFFFFFFU) ? -1 : 0;
 }
 
 static uint32_t uart_clock_gate_bit(struct uart *uart)
@@ -120,7 +119,7 @@ int uart_set_baud(struct uart *uart, uint32_t baud)
         return -1;
     }
     clock_freqs_get(&clocks);
-    if (find_baud_divisors(clocks.uart_ref, baud, &baudgen, &bauddiv) != 0)
+    if (uart_find_baud_divisors(clocks.uart_ref, baud, &baudgen, &bauddiv) != 0)
     {
         return -1;
     }
@@ -152,7 +151,7 @@ int uart_init(struct uart *uart, uint32_t baud)
 
 void uart_putc(struct uart *uart, int c)
 {
-    while (uart_tx_ready(uart) == 0)
+    while (!uart_tx_ready(uart))
     {
     }
     uart_send_byte(uart, (uint8_t)c);
@@ -160,7 +159,7 @@ void uart_putc(struct uart *uart, int c)
 
 int uart_getc(struct uart *uart)
 {
-    while (uart_rx_ready(uart) == 0)
+    while (!uart_rx_ready(uart))
     {
     }
     return (int)uart_recv_byte(uart);
@@ -168,7 +167,7 @@ int uart_getc(struct uart *uart)
 
 int uart_try_getc(struct uart *uart)
 {
-    if (uart_rx_ready(uart) == 0)
+    if (!uart_rx_ready(uart))
     {
         return -1;
     }

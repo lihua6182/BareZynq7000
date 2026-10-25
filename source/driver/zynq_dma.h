@@ -3,7 +3,7 @@
 
 #include "zynq_common.h"
 
-#define DMA_MEMCPY_MAX_BYTES (496u * 64u)
+#define DMA_MEMCPY_MAX_BYTES (496U * 64U)
 
 void dma_init(void);
 int dma_memcpy(void *dst, const void *src, uint32_t byte_count);

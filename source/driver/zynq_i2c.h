@@ -3,11 +3,11 @@
 
 #include "zynq_soc.h"
 
-#define I2C_SCL_MAX (400000u)
+#define I2C_SCL_MAX (400000U)
 
-#define I2C_MAX_TRANSFER (0xFFu)
+#define I2C_MAX_TRANSFER (0xFFU)
 
-#define I2C_ADDR_MAX (0x7Fu)
+#define I2C_ADDR_MAX (0x7FU)
 
 static inline void i2c_send_byte(struct i2c *i2c, uint8_t c)
 {
@@ -16,22 +16,22 @@ static inline void i2c_send_byte(struct i2c *i2c, uint8_t c)
 
 static inline uint8_t i2c_recv_byte(struct i2c *i2c)
 {
-    return (uint8_t)(i2c->data & 0xFFu);
+    return (uint8_t)(i2c->data & 0xFFU);
 }
 
-static inline int i2c_rx_ready(struct i2c *i2c)
+static inline bool i2c_rx_ready(struct i2c *i2c)
 {
-    return ((i2c->sr & I2C_SR_RXDV_Msk) != 0u) ? 1 : 0;
+    return (i2c->sr & I2C_SR_RXDV_Msk) != 0U;
 }
 
-static inline int i2c_tx_active(struct i2c *i2c)
+static inline bool i2c_tx_active(struct i2c *i2c)
 {
-    return ((i2c->sr & I2C_SR_TXDV_Msk) != 0u) ? 1 : 0;
+    return (i2c->sr & I2C_SR_TXDV_Msk) != 0U;
 }
 
-static inline int i2c_bus_active(struct i2c *i2c)
+static inline bool i2c_bus_active(struct i2c *i2c)
 {
-    return ((i2c->sr & I2C_SR_BA_Msk) != 0u) ? 1 : 0;
+    return (i2c->sr & I2C_SR_BA_Msk) != 0U;
 }
 
 static inline uint32_t i2c_irq_status(struct i2c *i2c)

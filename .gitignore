@@ -5,13 +5,17 @@
 !doc/code_notes.md
 /toolchain
 
-# 本机工具覆盖 (ninja/cmake 路径等), CMake 自动读取
+# 本机工具覆盖（ninja/cmake 路径等），CMake 自动读取
 /CMakeUserPresets.json
+
+# 打包后的 PL 镜像（tools/convert_bitstream.py 生成，需要时用 VSCode 任务重新生成）
+/source/board/board_pl_bitstream.c
+/source/board/board_pl_bitstream.h
 
 __pycache__
 
 # J-Flash 运行日志
 scripts/jflash/*.log
 
-# 项目记忆 (本地文件, 不入库)
+# 项目记忆（本地文件，不入库）
 /.workbuddy

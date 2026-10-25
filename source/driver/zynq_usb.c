@@ -1,4 +1,3 @@
-
 #include "zynq_usb.h"
 
 #include "zynq_cache.h"
@@ -9,12 +8,12 @@ int usb_ulpi_read_reg(uint8_t addr, uint8_t *val)
 {
     uint32_t t0 = tick_get();
 
-    usb0->ulpi_viewport = (1UL << 30) | ((uint32_t)addr << 16);
-    while ((usb0->ulpi_viewport & (1UL << 30)) != 0U)
+    usb0->ulpi_viewport = (1U << 30) | ((uint32_t)addr << 16);
+    while ((usb0->ulpi_viewport & (1U << 30)) != 0U)
     {
-        if ((tick_get() - t0) > 10u)
+        if ((tick_get() - t0) > 10U)
         {
-            *val = 0u;
+            *val = 0U;
             return -1;
         }
     }
@@ -22,24 +21,21 @@ int usb_ulpi_read_reg(uint8_t addr, uint8_t *val)
     return 0;
 }
 
-int usb_phy_link_check(void)
+int usb_phy_detect(void)
 {
-    uint8_t vh = 0u;
-    uint8_t vl = 0u;
+    uint8_t vid_low = 0U;
+    uint8_t vid_high = 0U;
 
-    if (usb_ulpi_read_reg(0x00, &vh) != 0)
+    if (usb_ulpi_read_reg(0x00, &vid_low) != 0)
     {
         return -1;
     }
-    if (usb_ulpi_read_reg(0x01, &vl) != 0)
+    if (usb_ulpi_read_reg(0x01, &vid_high) != 0)
     {
         return -1;
     }
-    if (vh == 0x04u && vl == 0x24u)
-    {
-        return 0;
-    }
-    return (vh == 0x24u && vl == 0x04u) ? 0 : 1;
+    /* SMSC/Microchip PHY Vendor ID 0x0424 */
+    return (vid_low == 0x24U && vid_high == 0x04U) ? 0 : 1;
 }
 
 void usb_dcache_clean(uintptr_t addr, size_t size)

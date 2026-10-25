@@ -2,6 +2,31 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Convert Bitstream",
+            "detail": "调用 tools/convert_bitstream.py 将比特流 .bin 打包为 ZBLZ 压缩 C 数组（生成 source/board/board_pl_bitstream.c/.h；启用 PL 前先运行本任务并重新执行 CMake 配置）",
+            "type": "shell",
+            "command": "py \"tools/convert_bitstream.py\" \"${input:bitstreamBin}\" \"source/board/board_pl_bitstream.c\" \"source/board/board_pl_bitstream.h\"",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": [
+                        "/d",
+                        "/c"
+                    ]
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Flash (J-Link QSPI XIP)",
             "type": "shell",
             "command": "(echo loadfile ${input:flashHex}& echo w4 0xF8000008 0xDF0D& echo w4 0xF8000200 0x1& echo Sleep 200& echo qc) | \"C:\\Program Files\\SEGGER\\JLink_V956\\JLink.exe\" -device XC7Z010 -if JTAG -speed 8000 -jtagconf 6,1 -autoconnect 1",
@@ -27,6 +52,12 @@
         }
     ],
     "inputs": [
+        {
+            "id": "bitstreamBin",
+            "type": "promptString",
+            "description": "输入比特流 .bin 路径（Vivado 原生或 PCAP 字序均可）",
+            "default": "source/board/bitstream.bin"
+        },
         {
             "id": "flashHex",
             "type": "pickString",

@@ -9,7 +9,7 @@ static void tick_irq_handler(void)
 {
     uint32_t flags = ttc0->interrupt_register_1;
 
-    if ((flags & 0x1UL) != 0U)
+    if ((flags & 0x1U) != 0U)
     {
         tick_ms++;
     }
@@ -21,19 +21,19 @@ void tick_init(void)
 
     clock_freqs_get(&clocks);
 
-    ttc0->counter_control_1 = (1UL << 0) | (1UL << 1) | (1UL << 2);
-    ttc0->interrupt_enable_1 = 0UL;
+    ttc0->counter_control_1 = (1U << 0) | (1U << 1) | (1U << 2);
+    ttc0->interrupt_enable_1 = 0U;
     (void)ttc0->interrupt_register_1;
-    ttc0->clock_control_1 = 0x1UL;
-    ttc0->interval_counter_1 = (clocks.cpu_1x / 2UL / 1000UL) - 1UL;
+    ttc0->clock_control_1 = 0x1U;
+    ttc0->interval_counter_1 = (clocks.cpu_1x / 2U / 1000U) - 1U;
 
     if (irq_attach(ttc0_timer0_irq, tick_irq_handler) == 0)
     {
         irq_enable(ttc0_timer0_irq);
-        ttc0->interrupt_enable_1 = 1UL;
+        ttc0->interrupt_enable_1 = 1U;
     }
 
-    ttc0->counter_control_1 = (1UL << 1) | (1UL << 2);
+    ttc0->counter_control_1 = (1U << 1) | (1U << 2);
 }
 
 void tick_mdelay(uint32_t ms)

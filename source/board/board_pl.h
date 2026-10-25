@@ -1,7 +1,6 @@
 #ifndef BOARD_PL_H
 #define BOARD_PL_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "zynq_soc.h"
@@ -28,10 +27,6 @@ enum pl_status
 
 #define PL_RESET_LINE_COUNT (4U)
 
-#define PL_LVL_OFF      (0x0U)
-#define PL_LVL_PS_TO_PL (0xAU)
-#define PL_LVL_ALL      (0xFU)
-
 static inline int pl_reset_assert(uint32_t line)
 {
     if (line >= PL_RESET_LINE_COUNT)
@@ -39,7 +34,7 @@ static inline int pl_reset_assert(uint32_t line)
         return -1;
     }
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl |= (1UL << line);
+    slcr->fpga_rst_ctrl |= (1U << line);
     slcr->lock = SLCR_LOCK_KEY;
     return 0;
 }
@@ -51,7 +46,7 @@ static inline int pl_reset_release(uint32_t line)
         return -1;
     }
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl &= ~(1UL << line);
+    slcr->fpga_rst_ctrl &= ~(1U << line);
     slcr->lock = SLCR_LOCK_KEY;
     return 0;
 }
@@ -62,76 +57,32 @@ static inline int pl_reset_is_asserted(uint32_t line)
     {
         return -1;
     }
-    return (int)((slcr->fpga_rst_ctrl >> line) & 1UL);
+    return (int)((slcr->fpga_rst_ctrl >> line) & 1U);
 }
 
 static inline uint32_t pl_reset_state(void)
 {
-    return slcr->fpga_rst_ctrl & 0xFUL;
+    return slcr->fpga_rst_ctrl & 0xFU;
 }
 
 static inline void pl_reset_set(uint32_t mask)
 {
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl = mask & 0xFUL;
+    slcr->fpga_rst_ctrl = mask & 0xFU;
     slcr->lock = SLCR_LOCK_KEY;
 }
 
 static inline void pl_reset_assert_all(void)
 {
-    pl_reset_set(0xFUL);
+    pl_reset_set(0xFU);
 }
 
 static inline void pl_reset_release_all(void)
 {
-    pl_reset_set(0x0UL);
+    pl_reset_set(0x0U);
 }
 
 int pl_reset_pulse(uint32_t line);
-
-static inline void pl_lvl_set(uint32_t value)
-{
-    slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->lvl_shftr_en = value;
-    slcr->lock = SLCR_LOCK_KEY;
-}
-
-static inline uint32_t pl_lvl_get(void)
-{
-    return slcr->lvl_shftr_en;
-}
-
-static inline void pl_lvl_off(void)
-{
-    pl_lvl_set(PL_LVL_OFF);
-}
-
-static inline void pl_lvl_ps_to_pl(void)
-{
-    pl_lvl_set(PL_LVL_PS_TO_PL);
-}
-
-static inline void pl_lvl_all(void)
-{
-    pl_lvl_set(PL_LVL_ALL);
-}
-
-static inline bool pl_is_powered(void)
-{
-    return ((devcfg->mctrl & DEVCFG_MCTRL_PCFG_POR_B_Msk) != 0U);
-}
-
-static inline bool pl_is_ready(void)
-{
-    return ((devcfg->status & DEVCFG_STATUS_PCFG_INIT_Msk) != 0U);
-}
-
-static inline bool pl_is_done(void)
-{
-    return ((devcfg->int_sts & DEVCFG_IXR_PCFG_DONE_Msk) != 0U);
-}
-
-enum pl_status pl_config_clear(void);
 
 enum pl_status pl_load(const void *img, uint32_t len);
 

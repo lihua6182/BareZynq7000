@@ -7,11 +7,14 @@ import os
 import struct
 import sys
 import zlib
+from typing import NoReturn
 
 SYNC_BE = b"\xAA\x99\x55\x66"
 SYNC_LE = b"\x66\x55\x99\xAA"
 SYNC_SCAN = 128
-PER_LINE = 16
+# 19 bytes per line: 4 + 19 * 6 - 1 = 117 columns, which is what clang-format
+# (ColumnLimit 120) leaves untouched.
+PER_LINE = 19
 
 LZMA_FILTERS = [{"id": lzma.FILTER_LZMA1, "preset": 9 | lzma.PRESET_EXTREME,
                  "lc": 0, "lp": 0, "pb": 0, "dict_size": 8192}]
@@ -20,7 +23,7 @@ MAGIC_LZMA = 0x5A4C425A
 HDR_FMT = "<IIII"
 
 
-def fail(msg: str) -> "NoReturn":  # type: ignore[valid-type]
+def fail(msg: str) -> NoReturn:
     print(f"convert_bitstream.py: error: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -44,7 +47,7 @@ def write_pair(out_c: str, out_h: str, c_body: str, c_comment: str, h_comment: s
 
 extern const uint8_t pl_img[];
 
-#define PL_IMG_LEN {length}u
+#define PL_IMG_LEN ({length}U)
 
 #endif
 """)
@@ -114,7 +117,8 @@ def main() -> None:
                  f" * over the PCAP-form (little-endian word order) image, with a 16-byte ZBLZ\n"
                  f" * header (magic, lengths, CRC-32).\n"
                  f" *   source  {args.bitstream} : {len(pcap)} bytes\n"
-                 f" *   packed  {len(hdr)}-byte header + {len(packed)}-byte payload = {len(image)} bytes ({len(pcap) / len(image):.1f}:1)\n"
+                 f" *   packed  {len(hdr)}-byte header + {len(packed)}-byte payload = "
+                 f"{len(image)} bytes ({len(pcap) / len(image):.1f}:1)\n"
                  f" *   crc32 of the unpacked image: 0x{zlib.crc32(pcap) & 0xFFFFFFFF:08X}")
     comment_h = f"Packed PL bitstream ({len(image)} bytes, ZBLZ format)."
     write_pair(args.out_c, args.out_h, body, comment_c, comment_h, len(image))

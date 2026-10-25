@@ -95,9 +95,13 @@ enum irqn
 };
 
 int irq_attach(uint32_t id, irq_handler_t handler);
+
 void irq_detach(uint32_t id);
+
 void irq_init(void);
+
 void irq_enable(uint32_t id);
+
 void irq_disable(uint32_t id);
 
 #endif

@@ -21,22 +21,22 @@ static inline void uart_send_byte(struct uart *uart, uint8_t c)
 
 static inline uint8_t uart_recv_byte(struct uart *uart)
 {
-    return (uint8_t)(uart->fifo & 0xFFUL);
+    return (uint8_t)(uart->fifo & 0xFFU);
 }
 
-static inline int uart_tx_ready(struct uart *uart)
+static inline bool uart_tx_ready(struct uart *uart)
 {
-    return ((uart->sr & UART_SR_TXFULL) == 0U) ? 1 : 0;
+    return (uart->sr & UART_SR_TXFULL) == 0U;
 }
 
-static inline int uart_tx_done(struct uart *uart)
+static inline bool uart_tx_done(struct uart *uart)
 {
-    return ((uart->sr & UART_SR_TXEMPTY) != 0U) ? 1 : 0;
+    return (uart->sr & UART_SR_TXEMPTY) != 0U;
 }
 
-static inline int uart_rx_ready(struct uart *uart)
+static inline bool uart_rx_ready(struct uart *uart)
 {
-    return ((uart->sr & UART_SR_RXEMPTY) == 0U) ? 1 : 0;
+    return (uart->sr & UART_SR_RXEMPTY) == 0U;
 }
 
 static inline void uart_enable(struct uart *uart)

@@ -36,17 +36,17 @@ void clock_freqs_get(struct clock_freqs *freqs);
 
 enum fclk
 {
-    FCLK0 = 0,
-    FCLK1 = 1,
-    FCLK2 = 2,
-    FCLK3 = 3
+    fclk0 = 0,
+    fclk1 = 1,
+    fclk2 = 2,
+    fclk3 = 3
 };
 
 enum fclk_src
 {
-    FCLK_SRC_IO = 0x0,
-    FCLK_SRC_ARM = 0x2,
-    FCLK_SRC_DDR = 0x3
+    fclk_src_io = 0x0,
+    fclk_src_arm = 0x2,
+    fclk_src_ddr = 0x3
 };
 
 bool clock_fclk_config(enum fclk fclk, enum fclk_src src, uint32_t div0, uint32_t div1, bool enable);

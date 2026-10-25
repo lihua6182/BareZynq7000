@@ -7,14 +7,14 @@
 
 extern void USBD_IRQHandler(uint8_t busid);
 
-#define USB_ULPI_FIRST_MIO (28u)
-#define USB_ULPI_LAST_MIO  (39u)
+#define USB_ULPI_FIRST_MIO (28U)
+#define USB_ULPI_LAST_MIO  (39U)
 
-#define USB_PHY_XTAL_WAIT_MS (50u)
+#define USB_PHY_XTAL_WAIT_MS (50U)
 
-#define USB0_CLK_CTRL_ULPI_MIO_IN (0x00101941UL)
+#define USB0_CLK_CTRL_ULPI_MIO_IN (0x00101941U)
 
-#define APER_CLK_USB0_CPU_1X (1u << 2)
+#define APER_CLK_USB0_CPU_1X (1U << 2)
 
 static void usb_irq_entry(void)
 {
@@ -25,9 +25,9 @@ static void usb_phy_reset_pulse(void)
 {
     mio_enable_clock();
     mio_set_function(BOARD_USB_PHY_RESET_MIO, MIO47_GPIO);
-    mio_direction_output(BOARD_USB_PHY_RESET_MIO, 1u);
+    mio_direction_output(BOARD_USB_PHY_RESET_MIO, 1U);
     tick_mdelay(10);
-    mio_set_value(BOARD_USB_PHY_RESET_MIO, 0u);
+    mio_set_value(BOARD_USB_PHY_RESET_MIO, 0U);
     tick_mdelay(50);
 }
 
@@ -51,8 +51,8 @@ void usb_dc_low_level_init(uint8_t busid)
     usb_phy_reset_pulse();
 
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->usb_rst_ctrl = 1u;
-    slcr->usb_rst_ctrl = 0u;
+    slcr->usb_rst_ctrl = 1U;
+    slcr->usb_rst_ctrl = 0U;
     slcr->lock = SLCR_LOCK_KEY;
 
     irq_attach(usb0_irq, usb_irq_entry);

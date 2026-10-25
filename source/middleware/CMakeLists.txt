@@ -1,4 +1,3 @@
-
 add_library(lzma INTERFACE)
 
 target_sources(lzma
@@ -13,6 +12,7 @@ target_include_directories(lzma
     lzma/sdk
 )
 
+# Not linked by the current application; kept for USB CDC bring-up.
 add_library(cherryusb INTERFACE)
 
 target_sources(cherryusb

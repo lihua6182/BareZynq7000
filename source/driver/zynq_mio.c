@@ -1,9 +1,8 @@
-
 #include "zynq_mio.h"
 
 #include <stddef.h>
 
-#define MIO_CLK_GATE_BIT (1UL << 22)
+#define MIO_CLK_GATE_BIT (1U << 22)
 
 void mio_enable_clock(void)
 {
@@ -100,9 +99,9 @@ void mio_set_irq_type(uint32_t pin, uint32_t type)
         return;
     }
 
-    *mio_reg_int_type(bank) = (*mio_reg_int_type(bank) & ~bit) | ((int_type != 0U) ? bit : 0UL);
-    *mio_reg_int_pol(bank) = (*mio_reg_int_pol(bank) & ~bit) | ((int_polarity != 0U) ? bit : 0UL);
-    *mio_reg_int_any(bank) = (*mio_reg_int_any(bank) & ~bit) | ((int_any != 0U) ? bit : 0UL);
+    *mio_reg_int_type(bank) = (*mio_reg_int_type(bank) & ~bit) | ((int_type != 0U) ? bit : 0U);
+    *mio_reg_int_pol(bank) = (*mio_reg_int_pol(bank) & ~bit) | ((int_polarity != 0U) ? bit : 0U);
+    *mio_reg_int_any(bank) = (*mio_reg_int_any(bank) & ~bit) | ((int_any != 0U) ? bit : 0U);
 }
 
 #define MIO_BANK1_FIRST_PAD (16U)
@@ -153,12 +152,12 @@ int mio_enable_pull_up(uint32_t pad)
 
 int mio_disable_pull_up(uint32_t pad)
 {
-    return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_PULLUP, 0UL);
+    return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_PULLUP, 0U);
 }
 
 int mio_enable_receiver(uint32_t pad)
 {
-    return mio_pad_rmw(pad, MIO_PIN_OPT_DIS_RCVR, 0UL);
+    return mio_pad_rmw(pad, MIO_PIN_OPT_DIS_RCVR, 0U);
 }
 
 int mio_disable_receiver(uint32_t pad)
@@ -173,5 +172,5 @@ int mio_set_slew_fast(uint32_t pad)
 
 int mio_set_slew_slow(uint32_t pad)
 {
-    return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_SPEED_FAST, 0UL);
+    return mio_pad_rmw(pad, MIO_PIN_OPT_ENA_SPEED_FAST, 0U);
 }
