@@ -27,60 +27,19 @@ enum pl_status
 
 #define PL_RESET_LINE_COUNT (4U)
 
-static inline int pl_reset_assert(uint32_t line)
-{
-    if (line >= PL_RESET_LINE_COUNT)
-    {
-        return -1;
-    }
-    slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl |= (1U << line);
-    slcr->lock = SLCR_LOCK_KEY;
-    return 0;
-}
+int pl_reset_assert(uint32_t line);
 
-static inline int pl_reset_release(uint32_t line)
-{
-    if (line >= PL_RESET_LINE_COUNT)
-    {
-        return -1;
-    }
-    slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl &= ~(1U << line);
-    slcr->lock = SLCR_LOCK_KEY;
-    return 0;
-}
+int pl_reset_release(uint32_t line);
 
-static inline int pl_reset_is_asserted(uint32_t line)
-{
-    if (line >= PL_RESET_LINE_COUNT)
-    {
-        return -1;
-    }
-    return (int)((slcr->fpga_rst_ctrl >> line) & 1U);
-}
+int pl_reset_is_asserted(uint32_t line);
 
-static inline uint32_t pl_reset_state(void)
-{
-    return slcr->fpga_rst_ctrl & 0xFU;
-}
+uint32_t pl_reset_state(void);
 
-static inline void pl_reset_set(uint32_t mask)
-{
-    slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->fpga_rst_ctrl = mask & 0xFU;
-    slcr->lock = SLCR_LOCK_KEY;
-}
+void pl_reset_set(uint32_t mask);
 
-static inline void pl_reset_assert_all(void)
-{
-    pl_reset_set(0xFU);
-}
+void pl_reset_assert_all(void);
 
-static inline void pl_reset_release_all(void)
-{
-    pl_reset_set(0x0U);
-}
+void pl_reset_release_all(void);
 
 int pl_reset_pulse(uint32_t line);
 

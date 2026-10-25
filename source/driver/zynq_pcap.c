@@ -6,10 +6,51 @@
 #define PCAP_DMA_DONE_POLL_LIMIT (60000000U)
 
 #define PCAP_DMA_ERROR_MASK                                                                                            \
-    (DEVCFG_IXR_DMA_CMD_ERR_Msk | DEVCFG_IXR_DMA_Q_OV_Msk |                                                            \
-     DEVCFG_IXR_P2D_LEN_ERR_Msk | DEVCFG_IXR_RX_FIFO_OV_Msk | DEVCFG_IXR_AXI_WERR_Msk |                                \
-     DEVCFG_IXR_AXI_WTO_Msk | DEVCFG_IXR_AXI_RERR_Msk | DEVCFG_IXR_AXI_RTO_Msk |                                       \
+    (DEVCFG_IXR_DMA_CMD_ERR_Msk | DEVCFG_IXR_DMA_Q_OV_Msk | DEVCFG_IXR_P2D_LEN_ERR_Msk | DEVCFG_IXR_RX_FIFO_OV_Msk |   \
+     DEVCFG_IXR_AXI_WERR_Msk | DEVCFG_IXR_AXI_WTO_Msk | DEVCFG_IXR_AXI_RERR_Msk | DEVCFG_IXR_AXI_RTO_Msk |             \
      DEVCFG_IXR_PCFG_HMAC_ERR_Msk | DEVCFG_IXR_PCFG_SEU_ERR_Msk)
+
+void pcap_lvl_set(uint32_t value)
+{
+    slcr->unlock = SLCR_UNLOCK_KEY;
+    slcr->lvl_shftr_en = value;
+    slcr->lock = SLCR_LOCK_KEY;
+}
+
+uint32_t pcap_lvl_get(void)
+{
+    return slcr->lvl_shftr_en;
+}
+
+void pcap_lvl_off(void)
+{
+    pcap_lvl_set(PCAP_LVL_OFF);
+}
+
+void pcap_lvl_ps_to_pl(void)
+{
+    pcap_lvl_set(PCAP_LVL_PS_TO_PL);
+}
+
+void pcap_lvl_all(void)
+{
+    pcap_lvl_set(PCAP_LVL_ALL);
+}
+
+bool pcap_is_powered(void)
+{
+    return ((devcfg->mctrl & DEVCFG_MCTRL_PCFG_POR_B_Msk) != 0U);
+}
+
+bool pcap_is_ready(void)
+{
+    return ((devcfg->status & DEVCFG_STATUS_PCFG_INIT_Msk) != 0U);
+}
+
+bool pcap_is_done(void)
+{
+    return ((devcfg->int_sts & DEVCFG_IXR_PCFG_DONE_Msk) != 0U);
+}
 
 static enum pcap_status pcap_wait_init(bool ready)
 {

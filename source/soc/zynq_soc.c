@@ -67,8 +67,7 @@ static void sys_clock_and_qspi_reconfig(void) __attribute__((section(".fast"), n
 
 #define PLL_LOCK_POLL_LIMIT (100000U)
 
-/* QSPI_REF_CLK = IO PLL/5 = 200 MHz; the boot ROM leaves SCLK at
-   REF/8 = 25 MHz (BAUD_RATE_DIV = 2) with linear mode already set up. */
+/* IO PLL/5 = 200 MHz; BAUD_RATE_DIV = 2 gives the BootROM's 25 MHz SCLK. */
 #define QSPI_REF_DIVISOR (5U)
 #define QSPI_CR_BOOT     (0x800238D1U)
 

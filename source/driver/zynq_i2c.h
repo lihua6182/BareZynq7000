@@ -9,55 +9,25 @@
 
 #define I2C_ADDR_MAX (0x7FU)
 
-static inline void i2c_send_byte(struct i2c *i2c, uint8_t c)
-{
-    i2c->data = (uint32_t)c;
-}
+void i2c_send_byte(struct i2c *i2c, uint8_t c);
 
-static inline uint8_t i2c_recv_byte(struct i2c *i2c)
-{
-    return (uint8_t)(i2c->data & 0xFFU);
-}
+uint8_t i2c_recv_byte(struct i2c *i2c);
 
-static inline bool i2c_rx_ready(struct i2c *i2c)
-{
-    return (i2c->sr & I2C_SR_RXDV_Msk) != 0U;
-}
+bool i2c_rx_ready(struct i2c *i2c);
 
-static inline bool i2c_tx_active(struct i2c *i2c)
-{
-    return (i2c->sr & I2C_SR_TXDV_Msk) != 0U;
-}
+bool i2c_tx_active(struct i2c *i2c);
 
-static inline bool i2c_bus_active(struct i2c *i2c)
-{
-    return (i2c->sr & I2C_SR_BA_Msk) != 0U;
-}
+bool i2c_bus_active(struct i2c *i2c);
 
-static inline uint32_t i2c_irq_status(struct i2c *i2c)
-{
-    return (i2c->isr & I2C_IXR_ALL_INTR_Msk);
-}
+uint32_t i2c_irq_status(struct i2c *i2c);
 
-static inline uint32_t i2c_irq_mask(struct i2c *i2c)
-{
-    return (i2c->imr & I2C_IXR_ALL_INTR_Msk);
-}
+uint32_t i2c_irq_mask(struct i2c *i2c);
 
-static inline void i2c_irq_enable(struct i2c *i2c, uint32_t mask)
-{
-    i2c->ier = (mask & I2C_IXR_ALL_INTR_Msk);
-}
+void i2c_irq_enable(struct i2c *i2c, uint32_t mask);
 
-static inline void i2c_irq_disable(struct i2c *i2c, uint32_t mask)
-{
-    i2c->idr = (mask & I2C_IXR_ALL_INTR_Msk);
-}
+void i2c_irq_disable(struct i2c *i2c, uint32_t mask);
 
-static inline void i2c_irq_clear(struct i2c *i2c, uint32_t mask)
-{
-    i2c->isr = (mask & I2C_IXR_ALL_INTR_Msk);
-}
+void i2c_irq_clear(struct i2c *i2c, uint32_t mask);
 
 void i2c_enable_clock(struct i2c *i2c);
 

@@ -49,6 +49,61 @@ static enum pl_status pl_from_pcap(enum pcap_status st)
     return PL_ERR_DMA;
 }
 
+int pl_reset_assert(uint32_t line)
+{
+    if (line >= PL_RESET_LINE_COUNT)
+    {
+        return -1;
+    }
+    slcr->unlock = SLCR_UNLOCK_KEY;
+    slcr->fpga_rst_ctrl |= (1U << line);
+    slcr->lock = SLCR_LOCK_KEY;
+    return 0;
+}
+
+int pl_reset_release(uint32_t line)
+{
+    if (line >= PL_RESET_LINE_COUNT)
+    {
+        return -1;
+    }
+    slcr->unlock = SLCR_UNLOCK_KEY;
+    slcr->fpga_rst_ctrl &= ~(1U << line);
+    slcr->lock = SLCR_LOCK_KEY;
+    return 0;
+}
+
+int pl_reset_is_asserted(uint32_t line)
+{
+    if (line >= PL_RESET_LINE_COUNT)
+    {
+        return -1;
+    }
+    return (int)((slcr->fpga_rst_ctrl >> line) & 1U);
+}
+
+uint32_t pl_reset_state(void)
+{
+    return slcr->fpga_rst_ctrl & 0xFU;
+}
+
+void pl_reset_set(uint32_t mask)
+{
+    slcr->unlock = SLCR_UNLOCK_KEY;
+    slcr->fpga_rst_ctrl = mask & 0xFU;
+    slcr->lock = SLCR_LOCK_KEY;
+}
+
+void pl_reset_assert_all(void)
+{
+    pl_reset_set(0xFU);
+}
+
+void pl_reset_release_all(void)
+{
+    pl_reset_set(0x0U);
+}
+
 int pl_reset_pulse(uint32_t line)
 {
     if (pl_reset_assert(line) != 0)

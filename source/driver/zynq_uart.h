@@ -14,120 +14,51 @@
 #define UART_STOPBITS_1 (1U)
 #define UART_STOPBITS_2 (2U)
 
-static inline void uart_send_byte(struct uart *uart, uint8_t c)
-{
-    uart->fifo = (uint32_t)c;
-}
+void uart_send_byte(struct uart *uart, uint8_t c);
 
-static inline uint8_t uart_recv_byte(struct uart *uart)
-{
-    return (uint8_t)(uart->fifo & 0xFFU);
-}
+uint8_t uart_recv_byte(struct uart *uart);
 
-static inline bool uart_tx_ready(struct uart *uart)
-{
-    return (uart->sr & UART_SR_TXFULL) == 0U;
-}
+bool uart_tx_ready(struct uart *uart);
 
-static inline bool uart_tx_done(struct uart *uart)
-{
-    return (uart->sr & UART_SR_TXEMPTY) != 0U;
-}
+bool uart_tx_done(struct uart *uart);
 
-static inline bool uart_rx_ready(struct uart *uart)
-{
-    return (uart->sr & UART_SR_RXEMPTY) == 0U;
-}
+bool uart_rx_ready(struct uart *uart);
 
-static inline void uart_enable(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_RX_EN | UART_CR_TX_EN;
-}
+void uart_enable(struct uart *uart);
 
-static inline void uart_disable(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_RX_DIS | UART_CR_TX_DIS;
-}
+void uart_disable(struct uart *uart);
 
-static inline void uart_enable_tx(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_TX_EN;
-}
+void uart_enable_tx(struct uart *uart);
 
-static inline void uart_disable_tx(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_TX_DIS;
-}
+void uart_disable_tx(struct uart *uart);
 
-static inline void uart_enable_rx(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_RX_EN;
-}
+void uart_enable_rx(struct uart *uart);
 
-static inline void uart_disable_rx(struct uart *uart)
-{
-    uart->cr = (uart->cr & ~UART_CR_EN_DIS_Msk) | UART_CR_RX_DIS;
-}
+void uart_disable_rx(struct uart *uart);
 
-static inline void uart_reset_tx(struct uart *uart)
-{
-    uart->cr |= UART_CR_TXRST;
-}
+void uart_reset_tx(struct uart *uart);
 
-static inline void uart_reset_rx(struct uart *uart)
-{
-    uart->cr |= UART_CR_RXRST;
-}
+void uart_reset_rx(struct uart *uart);
 
-static inline void uart_set_baud_gen(struct uart *uart, uint32_t baudgen)
-{
-    uart->baudgen = baudgen & UART_BAUDGEN_MASK_Msk;
-}
+void uart_set_baud_gen(struct uart *uart, uint32_t baudgen);
 
-static inline void uart_set_baud_div(struct uart *uart, uint32_t bauddiv)
-{
-    uart->bauddiv = bauddiv & UART_BAUDDIV_MASK_Msk;
-}
+void uart_set_baud_div(struct uart *uart, uint32_t bauddiv);
 
-static inline uint32_t uart_irq_status(struct uart *uart)
-{
-    return (uart->isr & UART_IXR_MASK_Msk);
-}
+uint32_t uart_irq_status(struct uart *uart);
 
-static inline uint32_t uart_irq_mask(struct uart *uart)
-{
-    return (uart->imr & UART_IXR_MASK_Msk);
-}
+uint32_t uart_irq_mask(struct uart *uart);
 
-static inline void uart_irq_enable(struct uart *uart, uint32_t mask)
-{
-    uart->ier = (mask & UART_IXR_MASK_Msk);
-}
+void uart_irq_enable(struct uart *uart, uint32_t mask);
 
-static inline void uart_irq_disable(struct uart *uart, uint32_t mask)
-{
-    uart->idr = (mask & UART_IXR_MASK_Msk);
-}
+void uart_irq_disable(struct uart *uart, uint32_t mask);
 
-static inline void uart_irq_clear(struct uart *uart, uint32_t mask)
-{
-    uart->isr = (mask & UART_IXR_MASK_Msk);
-}
+void uart_irq_clear(struct uart *uart, uint32_t mask);
 
-static inline void uart_set_rx_timeout(struct uart *uart, uint32_t n)
-{
-    uart->rxtout = (n & UART_RXTOUT_MASK_Msk);
-}
+void uart_set_rx_timeout(struct uart *uart, uint32_t n);
 
-static inline void uart_set_rx_watermark(struct uart *uart, uint32_t n)
-{
-    uart->rxwm = (n & UART_RXWM_MASK_Msk);
-}
+void uart_set_rx_watermark(struct uart *uart, uint32_t n);
 
-static inline void uart_set_tx_watermark(struct uart *uart, uint32_t n)
-{
-    uart->txwm = (n & UART_TXWM_MASK_Msk);
-}
+void uart_set_tx_watermark(struct uart *uart, uint32_t n);
 
 void uart_enable_clock(struct uart *uart);
 

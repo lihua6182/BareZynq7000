@@ -17,6 +17,56 @@
 
 #define I2C_POLL_LIMIT (1000000U)
 
+void i2c_send_byte(struct i2c *i2c, uint8_t c)
+{
+    i2c->data = (uint32_t)c;
+}
+
+uint8_t i2c_recv_byte(struct i2c *i2c)
+{
+    return (uint8_t)(i2c->data & 0xFFU);
+}
+
+bool i2c_rx_ready(struct i2c *i2c)
+{
+    return (i2c->sr & I2C_SR_RXDV_Msk) != 0U;
+}
+
+bool i2c_tx_active(struct i2c *i2c)
+{
+    return (i2c->sr & I2C_SR_TXDV_Msk) != 0U;
+}
+
+bool i2c_bus_active(struct i2c *i2c)
+{
+    return (i2c->sr & I2C_SR_BA_Msk) != 0U;
+}
+
+uint32_t i2c_irq_status(struct i2c *i2c)
+{
+    return (i2c->isr & I2C_IXR_ALL_INTR_Msk);
+}
+
+uint32_t i2c_irq_mask(struct i2c *i2c)
+{
+    return (i2c->imr & I2C_IXR_ALL_INTR_Msk);
+}
+
+void i2c_irq_enable(struct i2c *i2c, uint32_t mask)
+{
+    i2c->ier = (mask & I2C_IXR_ALL_INTR_Msk);
+}
+
+void i2c_irq_disable(struct i2c *i2c, uint32_t mask)
+{
+    i2c->idr = (mask & I2C_IXR_ALL_INTR_Msk);
+}
+
+void i2c_irq_clear(struct i2c *i2c, uint32_t mask)
+{
+    i2c->isr = (mask & I2C_IXR_ALL_INTR_Msk);
+}
+
 static uint32_t i2c_gate_bit(struct i2c *i2c)
 {
     return (i2c == i2c1) ? I2C1_CLK_GATE_BIT : I2C0_CLK_GATE_BIT;
@@ -32,7 +82,6 @@ static int i2c_error_pending(struct i2c *i2c)
     return ((i2c_irq_status(i2c) & I2C_IXR_ERROR_Msk) != 0U) ? 1 : 0;
 }
 
-/* Poll reg until (reg & mask) == value; -1 on bus error or timeout. */
 static int i2c_wait_bits(struct i2c *i2c, const volatile uint32_t *reg, uint32_t mask, uint32_t value)
 {
     uint32_t polls = I2C_POLL_LIMIT;
@@ -78,8 +127,6 @@ static void i2c_cr_write(struct i2c *i2c, uint32_t bits)
     i2c->cr = div | bits;
 }
 
-/* Drain len bytes, releasing HOLD once the last I2C_HOLD_RELEASE bytes are in
-   the FIFO so the transfer can complete. */
 static int i2c_read_bytes(struct i2c *i2c, uint8_t *rx, uint32_t len, int hold)
 {
     uint32_t got = 0U;

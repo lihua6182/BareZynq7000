@@ -22,47 +22,21 @@ enum pcap_status
 #define PCAP_LVL_PS_TO_PL (0xAU)
 #define PCAP_LVL_ALL      (0xFU)
 
-static inline void pcap_lvl_set(uint32_t value)
-{
-    slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->lvl_shftr_en = value;
-    slcr->lock = SLCR_LOCK_KEY;
-}
+void pcap_lvl_set(uint32_t value);
 
-static inline uint32_t pcap_lvl_get(void)
-{
-    return slcr->lvl_shftr_en;
-}
+uint32_t pcap_lvl_get(void);
 
-static inline void pcap_lvl_off(void)
-{
-    pcap_lvl_set(PCAP_LVL_OFF);
-}
+void pcap_lvl_off(void);
 
-static inline void pcap_lvl_ps_to_pl(void)
-{
-    pcap_lvl_set(PCAP_LVL_PS_TO_PL);
-}
+void pcap_lvl_ps_to_pl(void);
 
-static inline void pcap_lvl_all(void)
-{
-    pcap_lvl_set(PCAP_LVL_ALL);
-}
+void pcap_lvl_all(void);
 
-static inline bool pcap_is_powered(void)
-{
-    return ((devcfg->mctrl & DEVCFG_MCTRL_PCFG_POR_B_Msk) != 0U);
-}
+bool pcap_is_powered(void);
 
-static inline bool pcap_is_ready(void)
-{
-    return ((devcfg->status & DEVCFG_STATUS_PCFG_INIT_Msk) != 0U);
-}
+bool pcap_is_ready(void);
 
-static inline bool pcap_is_done(void)
-{
-    return ((devcfg->int_sts & DEVCFG_IXR_PCFG_DONE_Msk) != 0U);
-}
+bool pcap_is_done(void);
 
 void pcap_open(void);
 

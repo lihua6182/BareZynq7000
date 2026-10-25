@@ -32,9 +32,7 @@ static inline void dmb(void)
     asm volatile("dmb" ::: "memory");
 }
 
-/* Busy-wait for a few hundred cycles. always_inline so callers that run from
-   OCM (qspi_reconfig) never branch back into flash while the QSPI is being
-   reprogrammed. */
+/* Must stay inline: qspi_reconfig() runs from OCM and cannot fetch from flash. */
 static inline void __attribute__((always_inline)) delay_loops(uint32_t loops)
 {
     uint32_t i;

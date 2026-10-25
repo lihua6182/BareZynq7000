@@ -12,8 +12,7 @@ from typing import NoReturn
 SYNC_BE = b"\xAA\x99\x55\x66"
 SYNC_LE = b"\x66\x55\x99\xAA"
 SYNC_SCAN = 128
-# 19 bytes per line: 4 + 19 * 6 - 1 = 117 columns, which is what clang-format
-# (ColumnLimit 120) leaves untouched.
+# 19 per line = 117 columns: what clang-format (ColumnLimit 120) leaves alone.
 PER_LINE = 19
 
 LZMA_FILTERS = [{"id": lzma.FILTER_LZMA1, "preset": 9 | lzma.PRESET_EXTREME,
