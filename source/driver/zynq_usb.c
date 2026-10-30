@@ -4,12 +4,12 @@
 #include "zynq_soc.h"
 #include "zynq_tick.h"
 
-int usb_ulpi_read_reg(uint8_t addr, uint8_t *val)
+int usb_ulpi_read_reg(struct usb *dev, uint8_t addr, uint8_t *val)
 {
     uint32_t t0 = tick_get();
 
-    usb0->ulpi_viewport = (1U << 30) | ((uint32_t)addr << 16);
-    while ((usb0->ulpi_viewport & (1U << 30)) != 0U)
+    dev->ulpi_viewport = (1U << 30) | ((uint32_t)addr << 16);
+    while ((dev->ulpi_viewport & (1U << 30)) != 0U)
     {
         if ((tick_get() - t0) > 10U)
         {
@@ -17,20 +17,20 @@ int usb_ulpi_read_reg(uint8_t addr, uint8_t *val)
             return -1;
         }
     }
-    *val = (uint8_t)(usb0->ulpi_viewport >> 8);
+    *val = (uint8_t)(dev->ulpi_viewport >> 8);
     return 0;
 }
 
-int usb_phy_detect(void)
+int usb_phy_detect(struct usb *dev)
 {
     uint8_t vid_low = 0U;
     uint8_t vid_high = 0U;
 
-    if (usb_ulpi_read_reg(0x00, &vid_low) != 0)
+    if (usb_ulpi_read_reg(dev, 0x00, &vid_low) != 0)
     {
         return -1;
     }
-    if (usb_ulpi_read_reg(0x01, &vid_high) != 0)
+    if (usb_ulpi_read_reg(dev, 0x01, &vid_high) != 0)
     {
         return -1;
     }

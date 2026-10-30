@@ -1,6 +1,5 @@
 {
     "cmake.configureOnOpen": true,
-    "cmake.cmakePath": "C:/Software/CMake/bin/cmake.exe",
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "files.associations": {
         "*.c": "c",

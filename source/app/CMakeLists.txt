@@ -14,10 +14,6 @@ target_link_libraries(app
     board
 )
 
-option(BOARD_PL_ENABLE "Configure the PL from the embedded bitstream at boot" ON)
-
-target_compile_definitions(app PRIVATE BOARD_PL_ENABLE=$<BOOL:${BOARD_PL_ENABLE}>)
-
 set_source_files_properties(
     ../middleware/lzma/sdk/LzmaDec.c
     PROPERTIES

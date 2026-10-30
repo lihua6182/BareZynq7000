@@ -8,15 +8,17 @@
 #define BOARD_PL_ENABLE (1)
 #endif
 
-#define BOARD_LED_MIO (24U)
+#define BOARD_LED_MIO (11U)
 
-#define BOARD_UART         (uart0)
-#define BOARD_UART_TX_MIO  (11U)
-#define BOARD_UART_RX_MIO  (10U)
+#define BOARD_UART         (uart1)
+#define BOARD_UART_TX_MIO  (36U)
+#define BOARD_UART_RX_MIO  (37U)
 #define BOARD_UART_BAUD_HZ (115200U)
 
-#define BOARD_USB               (usb0)
-#define BOARD_USB_PHY_RESET_MIO (47U)
+#define BOARD_USB               (usb1)
+#define USB_ULPI_FIRST_MIO      (40U)
+#define USB_ULPI_LAST_MIO       (51U)
+#define BOARD_USB_PHY_RESET_MIO (38U)
 
 enum pl_status board_pl_status(void);
 

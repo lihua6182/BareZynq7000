@@ -3,7 +3,7 @@
     "tasks": [
         {
             "label": "Convert Bitstream",
-            "detail": "调用 tools/convert_bitstream.py 将比特流 .bin 打包为 ZBLZ 压缩 C 数组（生成 source/board/board_pl_bitstream.c/.h；启用 PL 前先运行本任务并重新执行 CMake 配置）",
+            "detail": "将比特流打包为 ZBLZ 压缩 C 数组",
             "type": "shell",
             "command": "py \"tools/convert_bitstream.py\" \"${input:bitstreamBin}\" \"source/board/board_pl_bitstream.c\" \"source/board/board_pl_bitstream.h\"",
             "options": {
@@ -27,9 +27,9 @@
             "problemMatcher": []
         },
         {
-            "label": "Flash (J-Link QSPI XIP)",
+            "label": "Flash QSPI",
             "type": "shell",
-            "command": "(echo loadfile ${input:flashHex}& echo w4 0xF8000008 0xDF0D& echo w4 0xF8000200 0x1& echo Sleep 200& echo qc) | \"C:\\Program Files\\SEGGER\\JLink_V956\\JLink.exe\" -device XC7Z010 -if JTAG -speed 8000 -jtagconf 6,1 -autoconnect 1",
+            "command": "py \"tools/flash_qspi.py\" \"${input:flashHex}\"",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -55,16 +55,18 @@
         {
             "id": "bitstreamBin",
             "type": "promptString",
-            "description": "输入比特流 .bin 路径（Vivado 原生或 PCAP 字序均可）",
+            "description": "输入比特流",
             "default": "source/board/bitstream.bin"
         },
         {
             "id": "flashHex",
             "type": "pickString",
-            "description": "选择要烧写的镜像 (build 产物)",
+            "description": "选择要烧写的镜像",
             "options": [
                 "build/release/source/app/app.hex",
-                "build/debug/source/app/app.hex"
+                "build/debug/source/app/app.hex",
+                "build/release/source/example/usb_cdc_speed_test/usb_cdc_speed_test.hex",
+                "build/debug/source/example/usb_cdc_speed_test/usb_cdc_speed_test.hex"
             ],
             "default": "build/release/source/app/app.hex"
         }

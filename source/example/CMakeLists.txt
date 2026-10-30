@@ -1,0 +1,1 @@
+add_subdirectory(usb_cdc_speed_test)

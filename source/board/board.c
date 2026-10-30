@@ -68,6 +68,9 @@ enum pl_status board_pl_status(void)
 
 void board_init(void)
 {
+    board_console_init();
+    board_led_init();
+
 #if BOARD_PL_ENABLE
     pl_load_status = pl_load(pl_img, PL_IMG_LEN);
 

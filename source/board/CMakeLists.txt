@@ -1,11 +1,10 @@
 add_library(board INTERFACE)
 
-# board_usb.c is intentionally left out until the USB device stack is linked.
-
 target_sources(board
     INTERFACE
     board.c
     board_pl.c
+    board_usb.c
 )
 
 target_include_directories(board

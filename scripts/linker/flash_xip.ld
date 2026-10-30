@@ -14,16 +14,12 @@ SECTIONS
 
     .boot_header ORIGIN(FLASH) :
     {
-        __boot_header_start__ = .;
         KEEP(*(.boot_header))
-        __boot_header_end__ = .;
     } > FLASH
 
     .vectors ORIGIN(FLASH) + 0x8C0 :
     {
-        __vectors_start__ = .;
         KEEP(*(.vectors))
-        __vectors_end__ = .;
         . = ALIGN(4);
     } > FLASH
 
@@ -52,9 +48,7 @@ SECTIONS
 
     .ARM.exidx :
     {
-        __exidx_start = .;
         *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-        __exidx_end = .;
     } > FLASH
 
     .init_array :
@@ -74,10 +68,8 @@ SECTIONS
     .fini_array :
     {
         . = ALIGN(4);
-        __fini_array_start = .;
         KEEP(*(SORT(.fini_array.*)))
         KEEP(*(.fini_array))
-        __fini_array_end = .;
         . = ALIGN(4);
     } > FLASH
 
@@ -150,6 +142,8 @@ SECTIONS
     ASSERT(_ebss <= __stack_abt_start__,                    "OCM overflow: .bss collided with exception stacks")
     ASSERT(__heap_start__ <= __heap_end__,                  "OCM overflow: heap start past heap end")
     ASSERT(__heap_end__ - __heap_start__ >= 0xC000,         "heap < 48 KiB: no room for the boot LZMA allocation")
+    ASSERT(ORIGIN(NO_CACHE_RAM) == 0xFFFC0000 + ORIGIN(RAM) + LENGTH(RAM),
+           "NO_CACHE_RAM must alias the 64K OCM block right above RAM")
 
     /DISCARD/ :
     {

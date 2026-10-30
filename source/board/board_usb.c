@@ -7,14 +7,11 @@
 
 extern void USBD_IRQHandler(uint8_t busid);
 
-#define USB_ULPI_FIRST_MIO (28U)
-#define USB_ULPI_LAST_MIO  (39U)
-
 #define USB_PHY_XTAL_WAIT_MS (50U)
 
-#define USB0_CLK_CTRL_ULPI_MIO_IN (0x00101941U)
+#define USB_CLK_CTRL_ULPI_MIO_IN (0x00101941U)
 
-#define APER_CLK_USB0_CPU_1X (1U << 2)
+#define APER_CLK_USB1_CPU_1X (1U << 3)
 
 static void usb_irq_entry(void)
 {
@@ -24,7 +21,9 @@ static void usb_irq_entry(void)
 static void usb_phy_reset_pulse(void)
 {
     mio_enable_clock();
-    mio_set_function(BOARD_USB_PHY_RESET_MIO, MIO47_GPIO);
+    mio_set_function(BOARD_USB_PHY_RESET_MIO, MIO_FN_GPIO);
+    /* USB3300 RESET 高有效 (数据手册 DS00001783B 表 3-1: active high,
+     * 内置下拉): 拉高脉冲复位, 终态保持低运行。 */
     mio_direction_output(BOARD_USB_PHY_RESET_MIO, 1U);
     tick_mdelay(10);
     mio_set_value(BOARD_USB_PHY_RESET_MIO, 0U);
@@ -43,26 +42,26 @@ void usb_dc_low_level_init(uint8_t busid)
     }
 
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->usb0_clk_ctrl = USB0_CLK_CTRL_ULPI_MIO_IN;
-    slcr->aper_clk_ctrl |= APER_CLK_USB0_CPU_1X;
+    slcr->usb1_clk_ctrl = USB_CLK_CTRL_ULPI_MIO_IN;
+    slcr->aper_clk_ctrl |= APER_CLK_USB1_CPU_1X;
     slcr->lock = SLCR_LOCK_KEY;
 
     tick_mdelay(USB_PHY_XTAL_WAIT_MS);
     usb_phy_reset_pulse();
 
     slcr->unlock = SLCR_UNLOCK_KEY;
-    slcr->usb_rst_ctrl = 1U;
+    slcr->usb_rst_ctrl = 2U;
     slcr->usb_rst_ctrl = 0U;
     slcr->lock = SLCR_LOCK_KEY;
 
-    irq_attach(usb0_irq, usb_irq_entry);
-    irq_enable(usb0_irq);
+    irq_attach(usb1_irq, usb_irq_entry);
+    irq_enable(usb1_irq);
 }
 
 void usb_dc_low_level_deinit(uint8_t busid)
 {
     (void)busid;
 
-    irq_disable(usb0_irq);
-    irq_detach(usb0_irq);
+    irq_disable(usb1_irq);
+    irq_detach(usb1_irq);
 }
